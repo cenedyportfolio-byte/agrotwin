@@ -35,7 +35,7 @@ export default function FieldsScreen() {
   }, [fields.data, query]);
 
   const header = (
-    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+    <View style={styles.header}>
       <AppText variant="display" style={{ marginBottom: 14 }}>
         My fields
       </AppText>
@@ -78,7 +78,7 @@ export default function FieldsScreen() {
     );
 
   return (
-    <Screen scroll={false}>
+    <Screen scroll={false} safeTop>
       <FlatList
         data={body ? [] : visible}
         keyExtractor={(f) => f.id}
@@ -103,7 +103,7 @@ export default function FieldsScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { marginBottom: 18 },
+  header: { paddingTop: 8, marginBottom: 18 },
   searchRow: { flexDirection: "row", gap: 10 },
   search: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, paddingHorizontal: 12, minHeight: 48 },
   input: { flex: 1, minWidth: 0, paddingVertical: 0 },

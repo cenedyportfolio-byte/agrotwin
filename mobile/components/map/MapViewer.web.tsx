@@ -32,6 +32,8 @@ interface MapViewerProps {
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
   onMapReady?: () => void;
+  onBaseMapStalled?: () => void;
+  onBaseMapLoaded?: () => void;
   edgePadding?: { top: number; right: number; bottom: number; left: number };
 }
 

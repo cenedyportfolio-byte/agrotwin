@@ -16,8 +16,14 @@ import { Button, Chip, EmptyState, ErrorState, IconButton, LoadingState, Screen,
 import { ImageTile } from "@/components/gallery/ImageTile";
 import { ImageViewerModal } from "@/components/gallery/ImageViewerModal";
 
-const COLUMNS = 2;
 const GAP = 10;
+
+/** More columns on wider screens (large phones landscape, tablets) so tiles don't balloon. */
+function gridColumns(width: number): number {
+  if (width >= 900) return 4;
+  if (width >= 620) return 3;
+  return 2;
+}
 
 export default function GalleryScreen() {
   const { surveyId, frame } = useLocalSearchParams<{ surveyId: string; frame?: string }>();
@@ -59,7 +65,8 @@ export default function GalleryScreen() {
     }
   }, [frame, list]);
 
-  const tileWidth = Math.floor((width - layout.pagePadding * 2 - GAP * (COLUMNS - 1)) / COLUMNS);
+  const columns = gridColumns(width);
+  const tileWidth = Math.floor((width - layout.pagePadding * 2 - GAP * (columns - 1)) / columns);
   const thumbUrl = useCallback((img: SurveyImage) => surveysService.thumbnailUrl(img.survey_id, img.id), []);
   const displayUrl = useCallback((img: SurveyImage) => surveysService.displayUrl(img.survey_id, img.id), []);
   const subtitle = survey.data ? `${formatNumber(list.length || survey.data.image_count)} images · ${survey.data.drone_model ?? "unknown drone"}` : null;
@@ -108,10 +115,10 @@ export default function GalleryScreen() {
   return (
     <Screen scroll={false} safeTop>
       <FlatList
-        key={view}
+        key={`${view}-${columns}`}
         data={visible}
         keyExtractor={(i) => i.id}
-        numColumns={view === "grid" ? COLUMNS : 1}
+        numColumns={view === "grid" ? columns : 1}
         columnWrapperStyle={view === "grid" ? styles.row : undefined}
         contentContainerStyle={styles.content}
         ListHeaderComponent={

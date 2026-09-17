@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft } from "lucide-react-native";
+import { ArrowLeft, X } from "lucide-react-native";
 import { layout } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useField } from "@/features/fields/hooks";
@@ -33,6 +33,9 @@ export default function FieldMapScreen() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(zoneParam ?? null);
   const [mapReady, setMapReady] = useState(false);
+  // Android: the Google Maps SDK drew nothing (no key in this build, or no Play services on the device).
+  const [imageryStalled, setImageryStalled] = useState(false);
+  const [stallDismissed, setStallDismissed] = useState(false);
 
   const survey = useSurvey(surveyId);
   const field = useField(survey.data?.field_id);
@@ -121,6 +124,8 @@ export default function FieldMapScreen() {
           onSelectZone={onSelectZone}
           highlightImageId={imageParam ?? null}
           onMapReady={() => setMapReady(true)}
+          onBaseMapStalled={() => setImageryStalled(true)}
+          onBaseMapLoaded={() => setImageryStalled(false)}
           edgePadding={{ top: insets.top + 90, right: 80, bottom: bottomEdge + 120, left: 30 }}
         >
           <ZoneMarkers zones={zoneViews} visible={layers.zones} onPress={(v) => setSelectedId(v.zone.id)} />
@@ -139,6 +144,19 @@ export default function FieldMapScreen() {
           </AppText>
         </View>
       </View>
+
+      {imageryStalled && !stallDismissed ? (
+        <View style={[styles.notice, { top: insets.top + 74, backgroundColor: colors.bg, borderColor: colors.attention }, colors.shadowMd]} accessibilityRole="alert">
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText variant="captionStrong">Map imagery is not loading</AppText>
+            <AppText variant="small" tone="muted">
+              Your field data loaded, but Google Maps on this phone is not drawing. A custom build needs a Google Maps key (see mobile/.env.example); an emulator needs a Google
+              Play image.
+            </AppText>
+          </View>
+          <IconButton size={36} icon={<X size={16} color={colors.text} strokeWidth={1.6} />} accessibilityLabel="Dismiss" onPress={() => setStallDismissed(true)} />
+        </View>
+      ) : null}
 
       <MapControls
         bottom={bottomEdge}
@@ -185,6 +203,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   topBar: { position: "absolute", left: 14, right: 14, flexDirection: "row", alignItems: "center", gap: 10 },
   titlePill: { flex: 1, minWidth: 0, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  notice: { position: "absolute", left: 14, right: 14, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
   legend: { position: "absolute", left: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 200 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 3 },
 });

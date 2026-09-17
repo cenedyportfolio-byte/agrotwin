@@ -50,7 +50,7 @@ export default function AiChatScreen() {
 
   if (surveys.isPending) {
     return (
-      <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <View style={[styles.root, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
         <View style={styles.headerRow}>{backButton}</View>
         <LoadingState />
       </View>
@@ -58,7 +58,7 @@ export default function AiChatScreen() {
   }
   if (surveys.isError) {
     return (
-      <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <View style={[styles.root, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
         <View style={styles.headerRow}>{backButton}</View>
         <ErrorState error={surveys.error} onRetry={() => surveys.refetch()} />
       </View>
@@ -66,7 +66,7 @@ export default function AiChatScreen() {
   }
   if (!surveyId) {
     return (
-      <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <View style={[styles.root, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
         <View style={styles.headerRow}>{backButton}</View>
         <EmptyState icon={<Bot size={52} color={colors.accent} strokeWidth={1.2} />} title="Nothing to talk about yet" message="The assistant explains the measured results of a survey. Upload and process a survey first." />
       </View>

@@ -8,6 +8,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/providers/AuthProvider";
 import { useFields } from "@/features/fields/hooks";
 import { useTestConnection } from "@/features/settings/hooks";
+import { useShallow } from "zustand/react/shallow";
 import { effectiveUrls, useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
 import { Blueprint, CheckRow, IconBox, ListGroup, ListRow, Screen, SectionHeader, StatusBadge, AppText } from "@/components/ui";
 import { AskAiFab } from "@/components/ai/AskAiFab";
@@ -34,7 +35,7 @@ export default function ProfileScreen() {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const advanced = useSettingsStore((s) => s.advancedMode);
-  const urls = useSettingsStore((s) => effectiveUrls(s));
+  const urls = useSettingsStore(useShallow((s) => effectiveUrls(s)));
   const fields = useFields();
   const test = useTestConnection();
 

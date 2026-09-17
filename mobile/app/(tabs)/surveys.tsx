@@ -40,7 +40,7 @@ export default function SurveysScreen() {
   const visible = useMemo(() => (surveys.data ?? []).filter((s) => matches(s.status, filter)), [surveys.data, filter]);
 
   const header = (
-    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+    <View style={styles.header}>
       <View style={styles.titleRow}>
         <AppText variant="display">Surveys</AppText>
         <Button label="New survey" onPress={() => router.push("/upload")} />
@@ -65,7 +65,7 @@ export default function SurveysScreen() {
   else if (visible.length === 0) body = <EmptyState compact title={`No ${filter} surveys`} message="Try another filter." />;
 
   return (
-    <Screen scroll={false}>
+    <Screen scroll={false} safeTop>
       <FlatList
         data={body ? [] : visible}
         keyExtractor={(s) => s.id}
@@ -92,7 +92,7 @@ export default function SurveysScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { gap: 14, marginBottom: 18 },
+  header: { paddingTop: 8, gap: 14, marginBottom: 18 },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   content: { paddingHorizontal: layout.pagePadding },
 });

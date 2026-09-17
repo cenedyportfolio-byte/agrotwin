@@ -6,6 +6,16 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * of being committed. Expo Go ships with its own key; the value is only
  * needed for `expo run:android` / EAS builds.
  */
+const googleMapsKey = process.env.GOOGLE_MAPS_ANDROID_API_KEY;
+// A prebuild / run:android / EAS build without the key produces an app whose
+// map is a blank beige canvas with only the Google logo (the Maps SDK refuses
+// to draw tiles, polygons or markers when unauthorised). Expo Go ships its
+// own key, so the warning is only raised for native builds.
+const nativeBuild = process.env.EAS_BUILD === "true" || process.argv.some((a) => /^(prebuild|run:android|run:ios)$/.test(a));
+if (nativeBuild && !googleMapsKey) {
+  console.warn("[app.config] GOOGLE_MAPS_ANDROID_API_KEY is not set: the field map will be blank in this Android build (put the key in mobile/.env, see .env.example).");
+}
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "AgroTwin",
@@ -36,9 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // and debug builds allow cleartext; a release build needs the
     // expo-build-properties plugin (android.usesCleartextTraffic) or https.
     permissions: ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION"],
-    config: process.env.GOOGLE_MAPS_ANDROID_API_KEY
-      ? { googleMaps: { apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY } }
-      : undefined,
+    config: googleMapsKey ? { googleMaps: { apiKey: googleMapsKey } } : undefined,
     predictiveBackGestureEnabled: false,
   },
   web: {

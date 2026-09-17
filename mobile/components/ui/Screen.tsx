@@ -24,23 +24,30 @@ export function Screen({ children, scroll = true, refreshing = false, onRefresh,
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const background = { backgroundColor: colors.bg };
+  // The top inset lives on the outer container, not on the scroll content:
+  // the status bar is translucent (edge-to-edge on Android, notch on iOS), so
+  // padding inside the ScrollView only works at scroll offset 0 and content
+  // slides under the clock and icons as soon as the page scrolls.
+  const safe = safeTop ? { paddingTop: insets.top } : null;
+  if (!scroll) {
+    return <View style={[styles.flex, background, safe, style]}>{children}</View>;
+  }
   const padding = {
-    paddingTop: safeTop ? insets.top + 8 : 0,
+    paddingTop: safeTop ? 8 : 0,
     paddingBottom: insets.bottom + 24 + bottomInset,
     paddingHorizontal: padded ? layout.pagePadding : 0,
   };
-  if (!scroll) {
-    return <View style={[styles.flex, background, safeTop && { paddingTop: insets.top }, style]}>{children}</View>;
-  }
   return (
-    <ScrollView
-      style={[styles.flex, background, style]}
-      contentContainerStyle={[padding, contentStyle]}
-      refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg} /> : undefined}
-      keyboardShouldPersistTaps="handled"
-    >
-      {children}
-    </ScrollView>
+    <View style={[styles.flex, background, safe]}>
+      <ScrollView
+        style={[styles.flex, style]}
+        contentContainerStyle={[padding, contentStyle]}
+        refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.bg} /> : undefined}
+        keyboardShouldPersistTaps="handled"
+      >
+        {children}
+      </ScrollView>
+    </View>
   );
 }
 
