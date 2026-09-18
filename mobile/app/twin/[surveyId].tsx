@@ -89,7 +89,9 @@ export default function DigitalTwinScreen() {
 
       <View style={[styles.topBar, { top: insets.top + 10 }]} pointerEvents="box-none">
         <IconButton tone="dark" size={46} icon={<ArrowLeft size={20} color={immersive.text} strokeWidth={1.6} />} accessibilityLabel="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)"))} />
-        <View style={styles.titlePill}>
+        {/* Sized to its own text and non-interactive, so it never blankets and blocks
+            taps meant for the embedded site underneath — see map/[surveyId].tsx. */}
+        <View style={styles.titlePill} pointerEvents="none">
           <AppText variant="heading" tone="inverse" style={{ fontSize: 18, lineHeight: 20 }} numberOfLines={1}>
             {survey.data.name}
           </AppText>
@@ -149,7 +151,7 @@ export default function DigitalTwinScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: immersive.bg },
   topBar: { position: "absolute", left: 14, right: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  titlePill: { flex: 1, minWidth: 0, backgroundColor: immersive.panel, borderWidth: 1, borderColor: immersive.border, paddingHorizontal: 12, paddingVertical: 8 },
+  titlePill: { alignSelf: "flex-start", maxWidth: "70%", minWidth: 0, backgroundColor: immersive.panel, borderWidth: 1, borderColor: immersive.border, paddingHorizontal: 12, paddingVertical: 8 },
   tools: { position: "absolute", right: 14, gap: 10 },
   bottom: { position: "absolute", left: 14, right: 14, gap: 10 },
   zoneCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: immersive.panelStrong, borderWidth: 1, borderColor: immersive.border, padding: 12 },

@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { immersive } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { ApiError } from "@/services/errors";
@@ -32,6 +33,8 @@ interface DigitalTwinWebViewProps {
   onModeChanged?: (mode: TwinMode) => void;
   onSplatStatus?: (status: SplatStatus, detail?: string) => void;
   onLayerError?: (message: string) => void;
+  /** Colour of the safe-area strips above and below the page (defaults to the immersive dark ground). */
+  frameColor?: string;
 }
 
 /** How long to wait for VIEWER_READY before assuming the page loaded without the bridge. */
@@ -42,10 +45,16 @@ const READY_FALLBACK_MS = 25_000;
  * The only component in the app that knows about react-native-webview.
  */
 export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebViewProps>(function DigitalTwinWebView(
-  { fieldId, surveyId, mode, focusZoneId, onReady, onZoneSelected, onModeChanged, onSplatStatus, onLayerError },
+  { fieldId, surveyId, mode, focusZoneId, onReady, onZoneSelected, onModeChanged, onSplatStatus, onLayerError, frameColor = immersive.bg },
   ref
 ) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  // The WebView is laid out edge-to-edge, and an Android WebView reports no
+  // safe-area insets to the page, so the site's own chrome (mode chips, health
+  // strip) would sit under the status bar and the gesture bar. Inset the page
+  // here instead; the native overlays the screens draw already use the insets.
+  const frame = { paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: frameColor };
   const webRef = useRef<WebView>(null);
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -113,7 +122,7 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
 
   if (!url) {
     return (
-      <View style={[styles.fill, { backgroundColor: colors.bg }]}>
+      <View style={[styles.fill, frame, { backgroundColor: colors.bg }]}>
         <ErrorState error={new ApiError("not_configured", "Web viewer address not configured")} title="Web viewer address not set" />
       </View>
     );
@@ -121,7 +130,7 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
 
   if (error) {
     return (
-      <View style={[styles.fill, { backgroundColor: colors.bg }]}>
+      <View style={[styles.fill, frame, { backgroundColor: colors.bg }]}>
         <ErrorState error={error} onRetry={reload} title="Digital twin unavailable" />
         <AppText variant="caption" tone="muted" style={styles.hint} selectable>
           {url}
@@ -131,7 +140,7 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
   }
 
   return (
-    <View style={styles.fill}>
+    <View style={[styles.fill, frame]}>
       <WebView
         key={attempt}
         ref={webRef}

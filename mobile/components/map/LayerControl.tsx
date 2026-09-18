@@ -23,6 +23,8 @@ interface Def {
 export function LayerSheet({ visible, onClose, rasters, hasZones, hasImages, hasBoundary }: LayerSheetProps) {
   const layers = useMapLayerStore((s) => s.layers);
   const toggle = useMapLayerStore((s) => s.toggleLayer);
+  const mapEngine = useMapLayerStore((s) => s.mapEngine);
+  const setMapEngine = useMapLayerStore((s) => s.setMapEngine);
 
   const basic: Def[] = [
     { key: "field", label: "Field boundary", enabled: hasBoundary },
@@ -54,7 +56,14 @@ export function LayerSheet({ visible, onClose, rasters, hasZones, hasImages, has
       <AppText variant="kicker" tone="muted" style={{ marginBottom: 8 }}>
         Advanced
       </AppText>
-      {group(advanced)}
+      <View style={{ marginBottom: 16 }}>{group(advanced)}</View>
+      <AppText variant="kicker" tone="muted" style={{ marginBottom: 8 }}>
+        Map engine
+      </AppText>
+      <ListGroup>
+        <CheckRow label="Phone map" note="Google Maps on Android, Apple Maps on iPhone" checked={mapEngine === "native"} onPress={() => setMapEngine("native")} />
+        <CheckRow label="Web map" note="The same map as the website — works without Google Maps" checked={mapEngine === "web"} onPress={() => setMapEngine("web")} last />
+      </ListGroup>
     </BottomSheet>
   );
 }

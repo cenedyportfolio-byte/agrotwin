@@ -212,7 +212,13 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
             </select>
           )}
         </div>
-        <CesiumToolbar />
+        {/* Both host screens (the app's Digital Twin screen and its Field Map fallback)
+            already drive mode switching from their own native controls over the
+            SET_MODE/MODE_CHANGED bridge messages — this on-page switcher is only
+            for the standalone browser. Keeping it while embedded doubled the mode
+            control and, being the same width-stretching row, sat directly under
+            the host's title chip where it could not be reached. */}
+        {!embedded && <CesiumToolbar />}
       </div>
 
       {/* layer controls */}
