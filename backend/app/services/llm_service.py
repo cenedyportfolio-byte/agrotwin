@@ -139,7 +139,11 @@ def _query_ollama(question: str, context: dict, passages: list) -> str | None:
         "2. Do not invent diagnoses, crop diseases, or specific chemical/pesticide recommendations without ground confirmation.\n"
         "3. Explain vegetation metrics (NDVI, NDRE, ExG, health percentages) clearly and provide practical actionable advice (e.g., ground truthing, checking drainage, scouting weed patches or soil compaction in problem zones).\n"
         "4. If asked about who you are or general agronomy questions, introduce yourself politely and provide helpful context about the field.\n"
-        "5. Keep responses concise, well-structured, and easy for a farmer to read on a mobile or laptop screen."
+        "5. This reply is shown in a phone-sized chat bubble, not a printed report. Write it like a text message: "
+        "short plain sentences, 2-4 short paragraphs at most. Do NOT use markdown headings (no #, ##, ###) or "
+        "horizontal rules, and do not bold whole sentences. Use a short bullet list (plain \"-\" lines, no bold) "
+        "only when there are three or more genuinely separate items to list; otherwise just write sentences. "
+        "You may bold ONE or two key numbers or terms with **like this** if it truly helps, never more."
     )
 
     field_summary = json.dumps(context, indent=2)

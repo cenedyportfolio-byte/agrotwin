@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
+import { Markdown } from "@/lib/markdown";
 import { Bot, Send, Loader2, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,7 +97,7 @@ export default function AskAiPage() {
                     {h.q}
                   </div>
                   <div className="mr-auto max-w-[85%] w-fit rounded-lg rounded-bl-sm border border-border bg-surface px-3 py-2 text-sm">
-                    <div className="whitespace-pre-line">{h.a}</div>
+                    <Markdown text={h.a} />
                     {h.sources.length > 0 && (
                       <div className="mt-2 border-t border-border pt-1.5 text-[11px] text-muted-foreground space-y-0.5">
                         <div className="flex items-center gap-1 font-medium">
