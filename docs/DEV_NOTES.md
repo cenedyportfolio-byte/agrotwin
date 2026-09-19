@@ -106,3 +106,30 @@ Action for the user: back up the drive and check it (`smartctl`, or at
 minimum re-copy those three files from the drone's SD card). The three
 frames are still registered; they just have no NDVI stats and their
 band/index previews can't be rendered until the files are readable.
+
+## Ollama model choice (2026-09-19)
+
+Ollama was already installed on this machine (`C:\Users\Admin\AppData\Local\Programs\Ollama`),
+running on its default port **11434** — the backend's config previously pointed at **11435**,
+a mismatch that meant the assistant could never reach it even once a model was pulled. Fixed
+in `backend/app/config.py`.
+
+Model: **`qwen2.5:14b-instruct-q4_K_M`** (9.0 GB, pulled via `ollama pull`), chosen for this
+machine's specs — RTX 4060 Ti (16GB VRAM, ~14GB free at idle), 32GB RAM, i5-13600K (14C/20T):
+- ~9GB VRAM at Q4 leaves headroom even if a gsplat/COLMAP job is holding a few GB of the GPU.
+- Qwen2.5 stays noticeably more faithful to the retrieved knowledge-base passages and the
+  structured field JSON (`llm_service.build_field_context`) than smaller models — important
+  since the whole point of grounding is not to have the model drift into generic answers.
+- The RAG context sent per question is small (BM25 top-3 passages from an ~3,000-word
+  knowledge base + compact JSON field summary), so context-window size was never the
+  constraint — model quality/groundedness was, which is why 14B was worth the extra VRAM over
+  8B.
+- `ollama_timeout_s` raised 60s -> 90s: measured generation time for a 512-token answer on
+  this model/GPU is a few seconds, well inside either value, but 90s gives margin if the GPU
+  is also busy training.
+- Verified end-to-end against the live survey: `POST /api/analysis/{id}/ask` returns
+  `"responder": "ollama:qwen2.5:14b-instruct-q4_K_M"` with a grounded answer.
+
+If the GPU is heavily loaded by a training job and Ollama needs to fall back to CPU, a lighter
+`qwen2.5:7b-instruct-q4_K_M` or `llama3.1:8b` is the documented fallback (not installed by
+default — pull it only if you hit timeouts during a long training run).
