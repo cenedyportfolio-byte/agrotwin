@@ -18,7 +18,7 @@ mobile/
 ├── services/            apiClient.ts + one service per backend router (fields, surveys, assets, analysis, processing, ai)
 ├── stores/              Zustand: settings (server URL, theme), map layers, chat thread, UI context, auth (future)
 ├── hooks/ utils/ constants/ types/ providers/ tests/
-├── app.config.ts        Expo config (reads GOOGLE_MAPS_ANDROID_API_KEY from env for builds)
+├── app.config.ts        Expo config (no map API keys — the Field Map is the web app's Cesium map)
 └── .env.example         copy to .env
 ```
 
@@ -38,8 +38,9 @@ No component calls `fetch` directly; TypeScript types in `types/api.ts` mirror
 
 No iPhone or macOS is needed for development. The same code runs on iOS:
 install **Expo Go** on an iPhone and scan the same QR code (same Wi-Fi, same
-LAN IP in `.env`). The map uses Apple Maps on iOS and Google Maps on Android,
-so no map key is required in Expo Go on either platform. Producing an
+LAN IP in `.env`). The Field Map and the Digital Twin are the web app's Cesium
+viewer shown in a WebView, so no map SDK or map API key is involved on either
+platform. Producing an
 installable iOS binary needs macOS/Xcode or EAS Build, and a release iOS build
 that talks to a plain-`http` LAN server needs an App Transport Security
 exception (`ios.infoPlist.NSAppTransportSecurity`) or https.
@@ -146,18 +147,14 @@ npm run tunnel          # if phone and laptop are on different networks (slower)
      **Enter URL manually** → `exp://100.73.248.92:8081`.
 - **Android Emulator:** start an AVD in Android Studio, then `npm run android`.
   Use `10.0.2.2` in `.env`.
-- **Web preview (`npm run web`)** works for every screen except the field map,
-  which shows a "use the mobile app" placeholder there instead of a real map —
-  `react-native-maps` has no web build and crashes on import, and Expo Router
-  loads every route up front, so without the placeholder the *entire* app
-  failed to load on web, not just that screen (`components/map/MapViewer.web.tsx`,
-  `ZoneMarkers.web.tsx`). The Digital Twin screen (`react-native-webview`) works
-  normally on web.
-- **Development build** (only needed later for a store build or custom native
-  code): `npx expo prebuild --platform android && npx expo run:android`.
-  Set `GOOGLE_MAPS_ANDROID_API_KEY` in the environment first — `react-native-maps`
-  needs a Google Maps key outside Expo Go (`app.config.ts` reads it). Release
-  builds also need https or the `expo-build-properties` plugin with
+- **Web preview (`npm run web`)** renders every screen's chrome; the Field Map
+  and Digital Twin screens embed the web app through `react-native-webview`,
+  which has no browser implementation, so those two show their overlays over an
+  empty canvas on web. Test them on a phone or the emulator.
+- **Development / release build** (for a store build or custom native code):
+  `npx expo prebuild --platform android && npx expo run:android` (add
+  `--variant release` for a release APK). No map key is needed. Release builds
+  need https or the `expo-build-properties` plugin with
   `android.usesCleartextTraffic` for plain-http LAN access.
 
 ## 6. Verify
@@ -173,9 +170,9 @@ Manual checklist (with the backend running and the "40 ft RGB Site" survey loade
 
 1. Home shows the field, 66 / 32.2 / 1.7 % health, the latest survey and the top attention zones.
 2. Fields → field → "View analysis" lists 23 zones sorted by priority; "View on map" focuses one.
-3. Map: field outline, coloured zones, photo map tiles (`/tiles/<survey>/orthomosaic/{z}/{x}/{y}.webp` from the web app), layer panel, fit-to-field, my location.
+3. Map: the web app's Field Map loads in the WebView with satellite imagery, field outline, coloured zones and photo map tiles (`/tiles/<survey>/orthomosaic/{z}/{x}/{y}.webp`); the Layers sheet toggles layers on the page; "Centre on field" re-frames it; tapping a zone opens the zone sheet.
 4. Survey → "View drone images": grid of thumbnails, fullscreen with pinch zoom, metadata, "View on map".
-5. Survey → Digital Twin: the Cesium viewer loads in the WebView; mode chips switch Field Map / 3D Twin / Photorealistic; tapping a zone in Cesium shows it below.
+5. Survey → Digital Twin: the Cesium viewer loads in the WebView; the tool button switches Field Map / 3D Twin / Photorealistic; tapping a zone in Cesium shows it below.
 6. Ask AI: a question returns an answer labelled with its responder (local Ollama model or template summary).
 7. Upload: create field/survey, pick a few JPGs, upload, watch processing steps on the survey page.
 8. Stop the backend → screens show "Cannot connect to AgroTwin" with Retry and a link to Settings.
@@ -187,8 +184,9 @@ Manual checklist (with the backend running and the "40 ft RGB Site" survey loade
 |---------|-----|
 | "Cannot connect to AgroTwin" on the phone, works in the laptop browser | backend bound to 127.0.0.1 → start uvicorn with `--host 0.0.0.0`; check the firewall rule; confirm same Wi-Fi (guest networks often isolate clients) |
 | Works on emulator, not on phone | `.env` still says `10.0.2.2` or `localhost` → use the LAN IP, restart `expo start` |
-| Map is a blank beige page with only the "Google" logo — no satellite imagery, no field outline, no zone pins, although the header shows the field name | The Google Maps SDK on the phone is not rendering; the API is fine (the header data came from it). Either (a) the app is a development/production build made without `GOOGLE_MAPS_ANDROID_API_KEY` — add the key to `mobile/.env` and rebuild (`npx expo prebuild --platform android --clean && npx expo run:android`), or (b) the device/emulator has no Google Play services (AOSP emulator image, some phones) — use a "Google APIs"/"Google Play" image or Expo Go on a phone with Play services. `adb logcat \| grep -i "Authorization failure\|Google Maps"` names the cause. After a few seconds in this state the app switches itself to the **web map** (the website's Cesium Field Map in a WebView — needs no key or Play services) and says so; switch back under Layers → Map engine |
+| Map screen stays on "Loading map…" | same cause as the Digital Twin row below: the web app is not reachable from the phone, or the Next dev server is refusing its client chunks for that host |
 | Map shows no photo map | tile pyramid not built for that survey (`backend/scripts/build_tiles.py`) or `EXPO_PUBLIC_WEB_VIEWER_URL` wrong — tiles are served by the Next.js app on :3000 |
+| Map shows the website's own Layers panel / mode chips on top of the app's buttons | the web app on the server predates the embedded-mode changes in `frontend/app/fields/[id]/digital-twin/page.tsx`; rebuild and restart it (`npm run build` in `frontend`) |
 | Digital Twin stays on "Loading…" | web app not reachable on :3000 from the phone; open `http://<LAN IP>:3000` in the phone browser to check. If the page itself opens but stays on "Loading Digital Twin viewer…", Next's dev server is refusing its client chunks for that host (`allowedDevOrigins`): `frontend/next.config.ts` now allows every IP of the machine automatically; add other hostnames via `AGROTWIN_DEV_ORIGINS=host1,host2` |
 | Digital Twin closes with a memory message | Android killed the WebView's renderer (large splats); retry with fewer layers |
 | Thumbnails never load | thumbnails come from :8000 (`/api/surveys/{id}/images/{img}/thumbnail`) — same fix as the first row |
@@ -201,8 +199,8 @@ Manual checklist (with the backend running and the "40 ft RGB Site" survey loade
 | Concern | Runs on |
 |---------|---------|
 | Orthomosaics, NDVI/ExG analysis, detection zones, COLMAP/Gaussian splats, tiling | **backend (Python, GPU)** — unchanged |
-| Cesium 3D Digital Twin | **web app**, shown in the mobile WebView |
-| Field map (react-native-maps), farmer UI, uploads of small batches | **phone** |
+| Cesium Field Map and 3D Digital Twin | **web app**, shown in the mobile WebView (the app adds its own controls over it) |
+| Farmer UI, layer/zone sheets, uploads of small batches | **phone** |
 
 The phone never computes indices, never trains models, never downloads a
 GeoTIFF: rasters arrive as XYZ tiles built by `build_tiles.py`, images as

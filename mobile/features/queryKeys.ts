@@ -10,7 +10,6 @@ export const queryKeys = {
   surveyAssets: (surveyId: string) => ["survey-assets", surveyId] as const,
   surveyAvailability: (surveyId: string) => ["survey-availability", surveyId] as const,
   surveyBoundary: (surveyId: string) => ["survey-boundary", surveyId] as const,
-  tileMeta: (assetId: string) => ["tile-meta", assetId] as const,
   analysis: (surveyId: string) => ["analysis", surveyId] as const,
   job: (surveyId: string) => ["job", surveyId] as const,
 };

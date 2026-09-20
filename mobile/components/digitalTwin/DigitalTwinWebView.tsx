@@ -11,6 +11,7 @@ import {
   buildViewerUrl,
   hostMessageScript,
   injectedBeforeLoad,
+  injectedHideWebChromeScript,
   parseViewerMessage,
   type HostToViewerMessage,
   type SplatStatus,
@@ -150,6 +151,7 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
         onMessage={handleMessage}
         onLoadEnd={() => {
+          webRef.current?.injectJavaScript(injectedHideWebChromeScript);
           // Bridge-less page (older web build): hide the spinner once the document loaded.
           setTimeout(() => setLoading(false), 1500);
         }}

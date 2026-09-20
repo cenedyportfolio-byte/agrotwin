@@ -2,19 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, X } from "lucide-react-native";
+import { ArrowLeft } from "lucide-react-native";
 import { useTheme } from "@/hooks/useTheme";
 import { useField } from "@/features/fields/hooks";
-import { useFieldBoundary, useSurvey, useSurveyAssets, useSurveyImages } from "@/features/surveys/hooks";
+import { useFieldBoundary, useSurvey, useSurveyAssets, useSurveyAvailability, useSurveyImages } from "@/features/surveys/hooks";
 import { useAnalysis } from "@/features/analysis/hooks";
 import { enrichZones } from "@/features/analysis/zones";
 import { useMapLayerStore, type MapLayerKey } from "@/stores/mapLayerStore";
 import { useUiStore } from "@/stores/uiStore";
-import type { DetectionZone } from "@/types";
 import { ErrorState, IconButton, LoadingState, Screen, Swatch, AppText } from "@/components/ui";
-import { LayerSheet, MapControls, MapViewer, ZoneMarkers, ZoneSheet, selectRasterSources, type MapViewerHandle } from "@/components/map";
+import { LayerSheet, MapControls, ZoneSheet, selectRasterSources } from "@/components/map";
 import { DigitalTwinWebView, type DigitalTwinHandle } from "@/components/digitalTwin/DigitalTwinWebView";
-import type { TwinLayer } from "@/components/digitalTwin/digitalTwinBridge";
+import { TwinModeSelector } from "@/components/digitalTwin/TwinModeSelector";
+import type { TwinLayer, TwinMode } from "@/components/digitalTwin/digitalTwinBridge";
 
 const LEGEND = [
   { tier: "healthy", label: "Healthy" },
@@ -22,18 +22,27 @@ const LEGEND = [
   { tier: "problem", label: "Problem" },
 ] as const;
 
-/** Native layer toggles → the web viewer's layer keys, so the Layers sheet drives both engines. */
+/** The Layers sheet's keys → the web viewer's layer keys (SET_LAYER). */
 const WEB_LAYER: Record<MapLayerKey, TwinLayer> = {
   field: "fieldBoundary",
   zones: "problemZones",
   orthomosaic: "orthomosaic",
   imagePoints: "rgbPoints",
+  cropDensity: "cropDensity",
+  vectorOverlays: "vectorOverlays",
   ndvi: "ndvi",
   ndre: "ndre",
   gndvi: "gndvi",
   dsm: "dsm",
 };
 
+/**
+ * Field Map. The map is the website's Cesium Field Map (satellite imagery,
+ * boundary, photo map tiles, zones) shown in a WebView in embedded mode, which
+ * hides the site's own chrome; this screen draws the phone chrome — back, title,
+ * tool stack, legend, Layers sheet, zone sheet — over it and talks to the page
+ * through the bridge. No native map SDK and no map API key are involved.
+ */
 export default function FieldMapScreen() {
   const { surveyId, zone: zoneParam, image: imageParam } = useLocalSearchParams<{ surveyId: string; zone?: string; image?: string }>();
   const router = useRouter();
@@ -41,19 +50,19 @@ export default function FieldMapScreen() {
   const insets = useSafeAreaInsets();
   const setActiveSurvey = useUiStore((s) => s.setActiveSurvey);
   const layers = useMapLayerStore((s) => s.layers);
-  const mapEngine = useMapLayerStore((s) => s.mapEngine);
-  const setMapEngine = useMapLayerStore((s) => s.setMapEngine);
-  // "web": the website's Cesium Field Map in a WebView — no Google Maps key or Play services needed.
-  const webMap = mapEngine === "web";
+  const setLayer = useMapLayerStore((s) => s.setLayer);
 
-  const mapRef = useRef<MapViewerHandle>(null);
   const webRef = useRef<DigitalTwinHandle>(null);
   const [layersOpen, setLayersOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(zoneParam ?? null);
-  const [mapReady, setMapReady] = useState(false);
   const [webReady, setWebReady] = useState(false);
-  // True after Google Maps drew nothing and the screen switched itself to the web map.
-  const [autoSwitched, setAutoSwitched] = useState(false);
+  const [mode, setMode] = useState<TwinMode>("field-map");
+  const [splatStatus, setSplatStatus] = useState<string | null>(null);
+
+  const changeMode = useCallback((nextMode: TwinMode) => {
+    setMode(nextMode);
+    webRef.current?.send({ type: "SET_MODE", mode: nextMode });
+  }, []);
 
   const survey = useSurvey(surveyId);
   const field = useField(survey.data?.field_id);
@@ -61,16 +70,11 @@ export default function FieldMapScreen() {
   const analysis = useAnalysis(surveyId);
   const images = useSurveyImages(surveyId);
   const assets = useSurveyAssets(surveyId);
+  const availability = useSurveyAvailability(surveyId);
 
   useEffect(() => {
     if (surveyId) setActiveSurvey(surveyId);
   }, [surveyId, setActiveSurvey]);
-
-  // Each engine starts from scratch when the user (or the stall detector) switches.
-  useEffect(() => {
-    setMapReady(false);
-    setWebReady(false);
-  }, [webMap]);
 
   const zones = useMemo(() => analysis.data?.detections ?? [], [analysis.data]);
   const zoneViews = useMemo(
@@ -84,34 +88,22 @@ export default function FieldMapScreen() {
   const selected = zoneViews.find((v) => v.zone.id === selectedId) ?? null;
   const rasters = useMemo(() => selectRasterSources(assets.data), [assets.data]);
 
+  // Mirror the Layers sheet into the page whenever it is ready or a toggle changes.
   useEffect(() => {
-    if (!webMap && mapReady && selected?.bbox) mapRef.current?.focusOn(selected.bbox);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [webMap, mapReady, selectedId]);
-
-  useEffect(() => {
-    if (webMap || !mapReady || !imageParam) return;
-    const img = images.data?.find((i) => i.id === imageParam);
-    if (img?.lat != null && img.lon != null) mapRef.current?.focusOn({ latitude: img.lat, longitude: img.lon });
-  }, [webMap, mapReady, imageParam, images.data]);
-
-  // Web map: mirror the Layers sheet into the embedded viewer.
-  useEffect(() => {
-    if (!webMap || !webReady) return;
+    if (!webReady) return;
     for (const key of Object.keys(WEB_LAYER) as MapLayerKey[]) {
       webRef.current?.send({ type: "SET_LAYER", layer: WEB_LAYER[key], visible: layers[key] });
     }
-  }, [webMap, webReady, layers]);
+  }, [webReady, layers]);
 
-  const onSelectZone = useCallback((z: DetectionZone | null) => setSelectedId(z?.id ?? null), []);
-
-  // Android Google Maps drew no tiles (build without a Maps key, or no Play services):
-  // switch to the website's map, which needs neither, and say so. Persisted, so the
-  // next visit does not wait on a blank canvas again; the Layers sheet can switch back.
-  const onBaseMapStalled = useCallback(() => {
-    setMapEngine("web");
-    setAutoSwitched(true);
-  }, [setMapEngine]);
+  // "View on map" from the gallery: show the photo locations and look down at that photo.
+  useEffect(() => {
+    if (!webReady || !imageParam) return;
+    const img = images.data?.find((i) => i.id === imageParam);
+    if (img?.lat == null || img.lon == null) return;
+    setLayer("imagePoints", true);
+    webRef.current?.send({ type: "FOCUS_POINT", lat: img.lat, lon: img.lon });
+  }, [webReady, imageParam, images.data, setLayer]);
 
   const loading = survey.isPending || boundary.isPending || analysis.isPending || assets.isPending;
   const fatal = survey.isError ? survey.error : boundary.isError ? boundary.error : null;
@@ -125,94 +117,56 @@ export default function FieldMapScreen() {
       </Screen>
     );
   }
-  if (fatal) {
+  if (fatal || !survey.data) {
     return (
       <Screen scroll={false} safeTop>
-        <ErrorState error={fatal} title="Unable to load map" onRetry={() => (survey.isError ? survey.refetch() : boundary.refetch())} />
+        <ErrorState error={fatal ?? new Error("Survey not found")} title="Unable to load map" onRetry={() => (survey.isError ? survey.refetch() : boundary.refetch())} />
       </Screen>
     );
   }
 
-  const hasBoundary = !!boundary.data?.boundary;
   const imageList = images.data ?? [];
-  const noGeometry = !hasBoundary && zones.length === 0 && imageList.every((i) => i.lat == null) && !(assets.data ?? []).some((a) => a.bounds_geojson);
-  const fieldId = survey.data?.field_id ?? null;
+  const hasBoundary = !!boundary.data?.boundary;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
-      {webMap && fieldId ? (
-        <DigitalTwinWebView
-          ref={webRef}
-          fieldId={fieldId}
-          surveyId={surveyId}
-          mode="field-map"
-          focusZoneId={zoneParam ?? null}
-          onReady={() => setWebReady(true)}
-          onZoneSelected={setSelectedId}
-          frameColor={colors.bg}
-        />
-      ) : noGeometry ? (
-        <Screen scroll={false} safeTop>
-          <ErrorState
-            error={new Error("no geometry")}
-            title="Nothing to show on the map yet"
-            onRetry={() => {
-              boundary.refetch();
-              images.refetch();
-            }}
-          />
-          <AppText variant="body" tone="muted" style={{ textAlign: "center", paddingHorizontal: 24 }}>
-            This survey has no field boundary, GPS photo positions or stitched map yet. Run processing from the survey page.
-          </AppText>
-        </Screen>
-      ) : (
-        <MapViewer
-          ref={mapRef}
-          boundary={boundary.data?.boundary}
-          zones={zones}
-          images={imageList}
-          assets={assets.data}
-          selectedZoneId={selectedId}
-          onSelectZone={onSelectZone}
-          highlightImageId={imageParam ?? null}
-          onMapReady={() => setMapReady(true)}
-          onBaseMapStalled={onBaseMapStalled}
-          edgePadding={{ top: insets.top + 90, right: 80, bottom: bottomEdge + 120, left: 30 }}
-        >
-          <ZoneMarkers zones={zoneViews} visible={layers.zones} onPress={(v) => setSelectedId(v.zone.id)} />
-        </MapViewer>
-      )}
+      <DigitalTwinWebView
+        ref={webRef}
+        fieldId={survey.data.field_id}
+        surveyId={survey.data.id}
+        mode={mode}
+        focusZoneId={zoneParam ?? null}
+        onReady={() => setWebReady(true)}
+        onZoneSelected={setSelectedId}
+        onModeChanged={setMode}
+        onSplatStatus={(status) => setSplatStatus(status)}
+        frameColor={colors.bg}
+      />
 
       {/* top bar */}
       <View style={[styles.topBar, { top: insets.top + 10 }]} pointerEvents="box-none">
         <IconButton tone="raised" size={46} icon={<ArrowLeft size={20} color={colors.text} strokeWidth={1.6} />} accessibilityLabel="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)"))} />
-        {/*
-          Sized to its own text (not flex:1) and non-interactive: in web-map mode this
-          chip floats over the embedded website, and a full-width opaque pill here — even
-          the blank stretch past the text — used to sit on top of and swallow every tap
-          meant for the site's own Layers panel underneath. Shrinking it and letting taps
-          fall through keeps the label readable while leaving that panel reachable.
-        */}
+        {/* Sized to its text and non-interactive, so it never sits on top of (and swallows taps for) the page beneath. */}
         <View style={[styles.titlePill, { backgroundColor: colors.bg, borderColor: colors.divider }, colors.shadowMd]} pointerEvents="none">
           <AppText variant="heading" style={{ fontSize: 18, lineHeight: 20 }} numberOfLines={1}>
-            {field.data?.name ?? survey.data?.name ?? "Field map"}
+            {field.data?.name ?? survey.data.name}
           </AppText>
           <AppText variant="label" tone="muted" numberOfLines={1}>
-            {webMap ? `Web map · ${onCount} layers on` : `${onCount} layers on · tap a marker for details`}
+            {webReady ? `${onCount} layers on · tap a zone for details` : "Loading map…"}
           </AppText>
         </View>
       </View>
 
-      {autoSwitched ? (
-        <View style={[styles.notice, { top: insets.top + 74, backgroundColor: colors.bg, borderColor: colors.attention }, colors.shadowMd]} accessibilityRole="alert" pointerEvents="box-none">
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText variant="captionStrong">Showing the web map</AppText>
-            <AppText variant="small" tone="muted">
-              Google Maps could not draw on this phone (a build without a Maps key, or no Google Play services), so the map from the website is shown instead. Change this under
-              Layers → Map engine.
-            </AppText>
-          </View>
-          <IconButton size={36} icon={<X size={16} color={colors.text} strokeWidth={1.6} />} accessibilityLabel="Dismiss" onPress={() => setAutoSwitched(false)} />
+      {/* 3-mode selector: Map | 3D | Realistic */}
+      <View style={[styles.modeBar, { top: insets.top + 70 }]} pointerEvents="box-none">
+        <TwinModeSelector mode={mode} onSelectMode={changeMode} />
+      </View>
+
+      {mode === "photorealistic" && splatStatus === "missing" ? (
+        <View style={[styles.noticePill, { top: insets.top + 114, backgroundColor: colors.bg, borderColor: colors.attention }, colors.shadowMd]} pointerEvents="none">
+          <AppText variant="small" tone="attention">
+            No 3D Gaussian splat built yet for this survey
+          </AppText>
         </View>
       ) : null}
 
@@ -220,13 +174,13 @@ export default function FieldMapScreen() {
         bottom={bottomEdge}
         layersOpen={layersOpen}
         onLayers={() => setLayersOpen(true)}
-        onCentre={() => (webMap ? webRef.current?.reload() : mapRef.current?.fitToField())}
+        onCentre={() => webRef.current?.send({ type: "RESET_VIEW" })}
         onTwin={() => surveyId && router.push({ pathname: "/twin/[surveyId]", params: selectedId ? { surveyId, zone: selectedId } : { surveyId } })}
         onAi={() => router.push(surveyId ? { pathname: "/ai/chat", params: { surveyId } } : "/ai/chat")}
       />
 
       {/* legend */}
-      <View style={[styles.legend, { bottom: bottomEdge, backgroundColor: colors.bg, borderColor: colors.divider }, colors.shadowMd]} accessibilityLabel="Legend">
+      <View style={[styles.legend, { bottom: bottomEdge, backgroundColor: colors.bg, borderColor: colors.divider }, colors.shadowMd]} accessibilityLabel="Legend" pointerEvents="none">
         <AppText variant="kickerSm" tone="muted" style={{ marginBottom: 6 }}>
           Legend
         </AppText>
@@ -243,7 +197,15 @@ export default function FieldMapScreen() {
         ) : null}
       </View>
 
-      <LayerSheet visible={layersOpen} onClose={() => setLayersOpen(false)} rasters={rasters} hasZones={zones.length > 0} hasImages={imageList.some((i) => i.lat != null)} hasBoundary={hasBoundary} />
+      <LayerSheet
+        visible={layersOpen}
+        onClose={() => setLayersOpen(false)}
+        rasters={rasters}
+        hasZones={zones.length > 0}
+        hasImages={imageList.some((i) => i.lat != null)}
+        hasBoundary={hasBoundary}
+        hasVectorOverlays={!!availability.data?.vector_overlays}
+      />
       <ZoneSheet
         zone={selected?.zone ?? null}
         areaM2={selected?.areaM2 ?? null}
@@ -260,11 +222,9 @@ export default function FieldMapScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   topBar: { position: "absolute", left: 14, right: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  // Capped well short of the row's full width: the embedded website still draws its own
-  // (soon-to-be-removed once redeployed) mode switcher at the right edge of this same row,
-  // and this chip must not be the thing sitting in front of it.
-  titlePill: { alignSelf: "flex-start", maxWidth: "50%", minWidth: 0, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
-  notice: { position: "absolute", left: 14, right: 14, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
+  titlePill: { alignSelf: "flex-start", maxWidth: "70%", minWidth: 0, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  modeBar: { position: "absolute", left: 14, zIndex: 10 },
+  noticePill: { position: "absolute", left: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 300, zIndex: 10 },
   legend: { position: "absolute", left: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 200 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 3 },
 });

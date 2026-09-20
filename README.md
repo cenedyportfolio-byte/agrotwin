@@ -73,7 +73,7 @@ AgroTwin has three parts: the **Python backend** (all processing), the
 |---|---|---|
 | Audience | agronomists, GIS users, operators | farmers in the field |
 | Best for | advanced visualisation, desktop workflows, large survey uploads (thousands of frames), Cesium Digital Twin | farmer dashboard, field monitoring, health analysis and attention zones, survey results, alerts-style overview, AI assistant, mobile map, Digital Twin viewing |
-| Map | CesiumJS (2D drapes, 3D terrain/mesh, Gaussian splats) | react-native-maps with the field boundary, zones and the tile pyramids; the Cesium viewer opens in a WebView for 3D |
+| Map | CesiumJS (2D drapes, 3D terrain/mesh, Gaussian splats) | the same Cesium viewer in a WebView (embedded mode hides the site chrome); the app draws its own controls over it and drives layers/camera through a message bridge — no native map SDK, no map API key |
 | Uploads | batched, resumable, any size | small batches, single images, imported results; points to the web app for full flights |
 
 Run it (details, LAN/emulator networking and troubleshooting in

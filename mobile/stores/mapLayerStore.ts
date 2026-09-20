@@ -2,29 +2,18 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { secureStorage } from "./secureStorage";
 
-export type MapBaseLayer = "satellite" | "hybrid" | "standard";
-
 /**
- * Which component draws the Field Map: the native SDK (Google Maps on Android,
- * Apple Maps on iOS) or the website's Cesium Field Map in a WebView, which
- * needs no Google Maps key or Play services. The screen switches to "web" by
- * itself when the native map fails to draw; the Layers sheet lets you switch back.
+ * Layers of the Field Map. The map itself is the website's Cesium Field Map
+ * shown in a WebView; these toggles are pushed to it over the bridge
+ * (SET_LAYER), so the keys mirror the web viewer's digitalTwinStore.
+ * Simple layers are on by default; advanced ones are opt-in.
  */
-export type MapEngine = "native" | "web";
-
-/** Simple layers are on by default; advanced ones are opt-in, like the web viewer's Advanced View. */
-export type MapLayerKey = "field" | "zones" | "orthomosaic" | "imagePoints" | "ndvi" | "ndre" | "gndvi" | "dsm";
+export type MapLayerKey = "field" | "zones" | "orthomosaic" | "imagePoints" | "cropDensity" | "vectorOverlays" | "ndvi" | "ndre" | "gndvi" | "dsm";
 
 interface MapLayerState {
-  baseLayer: MapBaseLayer;
   layers: Record<MapLayerKey, boolean>;
-  showAdvanced: boolean;
-  mapEngine: MapEngine;
-  setMapEngine: (engine: MapEngine) => void;
-  setBaseLayer: (base: MapBaseLayer) => void;
   toggleLayer: (key: MapLayerKey) => void;
   setLayer: (key: MapLayerKey, on: boolean) => void;
-  setShowAdvanced: (on: boolean) => void;
 }
 
 const defaultLayers: Record<MapLayerKey, boolean> = {
@@ -32,6 +21,8 @@ const defaultLayers: Record<MapLayerKey, boolean> = {
   zones: true,
   orthomosaic: true,
   imagePoints: false,
+  cropDensity: false,
+  vectorOverlays: true,
   ndvi: false,
   ndre: false,
   gndvi: false,
@@ -41,23 +32,19 @@ const defaultLayers: Record<MapLayerKey, boolean> = {
 export const useMapLayerStore = create<MapLayerState>()(
   persist(
     (set) => ({
-      baseLayer: "hybrid",
       layers: defaultLayers,
-      showAdvanced: false,
-      mapEngine: "native",
-      setMapEngine: (mapEngine) => set({ mapEngine }),
-      setBaseLayer: (baseLayer) => set({ baseLayer }),
       toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
       setLayer: (key, on) => set((s) => ({ layers: { ...s.layers, [key]: on } })),
-      setShowAdvanced: (showAdvanced) => set({ showAdvanced }),
     }),
     {
       name: "agrotwin.map",
       storage: createJSONStorage(() => secureStorage),
-      partialize: (s) => ({ baseLayer: s.baseLayer, layers: s.layers, showAdvanced: s.showAdvanced, mapEngine: s.mapEngine }),
+      partialize: (s) => ({ layers: s.layers }),
+      // Older persisted state may carry keys from the removed native map (baseLayer,
+      // mapEngine); only the layer toggles are kept, and new keys get their defaults.
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<MapLayerState>;
-        return { ...current, ...p, layers: { ...defaultLayers, ...(p.layers ?? {}) } };
+        const p = (persisted ?? {}) as { layers?: Partial<Record<MapLayerKey, boolean>> };
+        return { ...current, layers: { ...defaultLayers, ...(p.layers ?? {}) } };
       },
     }
   )

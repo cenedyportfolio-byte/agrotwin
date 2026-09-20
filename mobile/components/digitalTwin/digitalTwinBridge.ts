@@ -32,6 +32,10 @@ export type HostToViewerMessage =
   | { type: "SET_MODE"; mode: TwinMode }
   | { type: "FOCUS_ZONE"; zoneId: string }
   | { type: "SET_ADVANCED"; advanced: boolean }
+  /** Fly back to the current mode's default view of the field ("Centre on field"). Older web builds ignore it. */
+  | { type: "RESET_VIEW" }
+  /** Look straight down at a point, e.g. where a drone photo was taken. Older web builds ignore it. */
+  | { type: "FOCUS_POINT"; lat: number; lon: number }
   | { type: "PING" };
 
 export type SplatStatus = "idle" | "loading" | "loaded" | "missing" | "error";
@@ -74,11 +78,62 @@ export function hostMessageScript(message: HostToViewerMessage): string {
   return `(function(){try{window.dispatchEvent(new CustomEvent('agrotwin:host-message',{detail:${payload}}));}catch(e){}})();true;`;
 }
 
+export const HIDE_WEB_CHROME_CSS = `
+  .pointer-events-none.absolute.inset-x-0.top-0 { display: none !important; }
+  div.pointer-events-none.absolute[class*="top-14"] { display: none !important; }
+  div.pointer-events-none.absolute[class*="top-20"] { display: none !important; }
+  .pointer-events-none.absolute.right-2 { display: none !important; }
+  .pointer-events-none.absolute.right-4 { display: none !important; }
+  .pointer-events-none.absolute.inset-x-0.bottom-0 { display: none !important; }
+  div[class*="rounded-xl"]:has(button) { display: none !important; }
+`;
+
+export const injectedHideWebChromeScript = `(function(){
+  try {
+    var css = "${HIDE_WEB_CHROME_CSS.replace(/\n/g, " ").replace(/\s+/g, " ").trim()}";
+    var style = document.getElementById('agrotwin-hide-chrome');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'agrotwin-hide-chrome';
+      style.innerHTML = css;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    function cleanWebControls() {
+      var bars = document.querySelectorAll('.pointer-events-none.absolute.inset-x-0.top-0, .pointer-events-none.absolute.inset-x-0.bottom-0');
+      bars.forEach(function(el) { el.style.setProperty('display', 'none', 'important'); });
+      var buttons = document.querySelectorAll('button');
+      buttons.forEach(function(b) {
+        var t = (b.textContent || '').trim();
+        if (t.indexOf('Realistic') !== -1 || t === '3D' || t === 'Map' || t === 'Layers') {
+          var bar = b.closest('.pointer-events-none') || b.closest('.pointer-events-auto') || b.parentElement;
+          if (bar && bar !== document.body) bar.style.setProperty('display', 'none', 'important');
+        }
+      });
+    }
+    cleanWebControls();
+    var attempts = 0;
+    var timer = setInterval(function() {
+      cleanWebControls();
+      attempts++;
+      if (attempts > 8) clearInterval(timer);
+    }, 350);
+  } catch (e) {}
+})();true;`;
+
 /**
  * Runs before the page's own scripts: marks the document as embedded so the
- * web page can hide its site chrome even before React hydrates.
+ * web page can hide its site chrome even before React hydrates, and injects
+ * styles that hide standalone browser controls if the web build predates embed mode.
  */
 export const injectedBeforeLoad = `(function(){
   window.__AGROTWIN_EMBED__ = true;
-  try { document.documentElement.setAttribute('data-agrotwin-embed', '1'); } catch (e) {}
+  try {
+    document.documentElement.setAttribute('data-agrotwin-embed', '1');
+    var css = "${HIDE_WEB_CHROME_CSS.replace(/\n/g, " ").replace(/\s+/g, " ").trim()}";
+    var style = document.createElement('style');
+    style.id = 'agrotwin-hide-chrome';
+    style.innerHTML = css;
+    (document.head || document.documentElement).appendChild(style);
+  } catch (e) {}
 })();true;`;
+

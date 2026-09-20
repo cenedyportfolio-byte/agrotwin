@@ -209,20 +209,6 @@ export const typography = {
   buttonLg: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 19 },
 } satisfies Record<string, TextStyle>;
 
-/** Colours used to draw geometry on the map. Saturated enough to read over imagery in both themes. */
-export const mapColors = {
-  fieldStroke: "#ffffff",
-  fieldFill: "rgba(255, 255, 255, 0.06)",
-  imagePoint: "rgba(89, 128, 166, 0.95)",
-  path: "rgba(89, 128, 166, 0.6)",
-  zone: {
-    healthy: { stroke: "#4c8a5c", fill: "rgba(76, 138, 92, 0.45)" },
-    attention: { stroke: "#b3862c", fill: "rgba(179, 134, 44, 0.5)" },
-    problem: { stroke: "#b04f3d", fill: "rgba(176, 79, 61, 0.55)" },
-    info: { stroke: "#5980a6", fill: "rgba(89, 128, 166, 0.35)" },
-    neutral: { stroke: "#7a7a7d", fill: "rgba(122, 122, 125, 0.35)" },
-  } satisfies Record<StatusTier, { stroke: string; fill: string }>,
-} as const;
 
 /** Lucide stroke width the system prescribes. */
 export const iconStroke = 1.5;

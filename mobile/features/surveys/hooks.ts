@@ -59,15 +59,6 @@ export function useFieldBoundary(surveyId: string | null | undefined) {
   });
 }
 
-/** Zoom range / format of an XYZ tile-pyramid asset. */
-export function useTileMeta(asset: SurveyAsset | null | undefined) {
-  return useQuery({
-    queryKey: queryKeys.tileMeta(asset?.id ?? ""),
-    queryFn: () => assetsService.tileMeta(asset as SurveyAsset),
-    enabled: !!asset?.public_url,
-    staleTime: Infinity,
-  });
-}
 
 export function useCreateSurvey() {
   const qc = useQueryClient();

@@ -13,6 +13,7 @@ import { detectionTypeLabel, priorityLabel } from "@/constants/labels";
 import { Button, ErrorState, IconButton, LoadingState, Screen, AppText } from "@/components/ui";
 import { DigitalTwinWebView, type DigitalTwinHandle } from "@/components/digitalTwin/DigitalTwinWebView";
 import { TwinModeCard } from "@/components/digitalTwin/TwinStatusCard";
+import { TwinModeSelector } from "@/components/digitalTwin/TwinModeSelector";
 import type { SplatStatus, TwinMode } from "@/components/digitalTwin/digitalTwinBridge";
 
 const NEXT_MODE: Record<TwinMode, TwinMode> = { "field-map": "3d-twin", "3d-twin": "photorealistic", photorealistic: "field-map" };
@@ -101,6 +102,11 @@ export default function DigitalTwinScreen() {
         </View>
       </View>
 
+      {/* 3-mode selector: Map | 3D | Realistic */}
+      <View style={[styles.modeBar, { top: insets.top + 70 }]} pointerEvents="box-none">
+        <TwinModeSelector mode={mode} onSelectMode={changeMode} tone="dark" />
+      </View>
+
       <View style={[styles.tools, { top: insets.top + 76 }]} pointerEvents="box-none">
         {tools.map((t) => (
           <IconButton
@@ -152,6 +158,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: immersive.bg },
   topBar: { position: "absolute", left: 14, right: 14, flexDirection: "row", alignItems: "center", gap: 10 },
   titlePill: { alignSelf: "flex-start", maxWidth: "70%", minWidth: 0, backgroundColor: immersive.panel, borderWidth: 1, borderColor: immersive.border, paddingHorizontal: 12, paddingVertical: 8 },
+  modeBar: { position: "absolute", left: 14, zIndex: 10 },
   tools: { position: "absolute", right: 14, gap: 10 },
   bottom: { position: "absolute", left: 14, right: 14, gap: 10 },
   zoneCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: immersive.panelStrong, borderWidth: 1, borderColor: immersive.border, padding: 12 },

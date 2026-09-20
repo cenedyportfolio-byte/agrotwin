@@ -31,16 +31,25 @@ export function FieldCard({ field, onPress, zoneCount, lastSurveyLabel, variant 
   const health = overallHealth(shares);
   const statusTier = processing ? "info" : health.tier;
   const statusLabel = processing ? surveyStatusLabel(field.latest_survey_status ?? "PROCESSING") : health.label;
+  // The field summary already carries the analysis percentages, so "not analysed"
+  // is only true when those are missing too — not merely when the caller did not
+  // pass a zone count (the Fields tab never does).
+  const analysed = shares != null;
   const zoneNote = processing
     ? "Analysis in progress"
     : zoneCount == null
       ? field.latest_survey_id
-        ? "Not analysed yet"
+        ? analysed
+          ? shares && shares.attention + shares.problem > 0
+            ? `${formatPercent(shares.attention + shares.problem)} of the area needs attention`
+            : "No issues found"
+          : "Not analysed yet"
         : "No surveys yet"
       : zoneCount === 0
         ? "No issues found"
         : `${zoneCount} ${zoneCount === 1 ? "area needs" : "areas need"} attention`;
-  const zoneTone = zoneCount ? colors.attention : colors.muted;
+  const flagged = zoneCount ? true : zoneCount == null && analysed && !!shares && shares.attention + shares.problem > 0;
+  const zoneTone = flagged ? colors.attention : colors.muted;
   const meta = `${cropLabel(field.crop_type)} · ${field.area_hectares != null ? formatHectares(field.area_hectares) : "size not measured"}`;
 
   if (variant === "list") {

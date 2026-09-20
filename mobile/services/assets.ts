@@ -18,15 +18,6 @@ export const IMPORTABLE_ASSET_TYPES = [
 
 export type ImportableAssetType = (typeof IMPORTABLE_ASSET_TYPES)[number]["value"];
 
-export interface TileMeta {
-  layer: string;
-  bounds: [west: number, south: number, east: number, north: number];
-  minzoom: number;
-  maxzoom: number;
-  format: string;
-  tile_size: number;
-  scheme: string;
-}
 
 /** Survey assets — rasters, tile pyramids, 3D products (backend/app/routers/surveys.py). */
 export const assetsService = {
@@ -42,14 +33,6 @@ export const assetsService = {
   /** `{z}/{x}/{y}.<ext>` template for an XYZ tile-pyramid asset built by build_tiles.py. */
   tileTemplate: (asset: SurveyAsset, format = "webp") =>
     asset.public_url ? `${publicAssetUrl(asset.public_url)}/{z}/{x}/{y}.${format}` : null,
-
-  /** tilemeta.json next to a tile pyramid (zoom range, format, bounds). */
-  tileMeta: async (asset: SurveyAsset): Promise<TileMeta | null> => {
-    if (!asset.public_url) return null;
-    const res = await fetch(`${publicAssetUrl(asset.public_url)}/tilemeta.json`);
-    if (!res.ok) return null;
-    return (await res.json()) as TileMeta;
-  },
 
   /** Manual import of a processed file; the backend validates georeferencing and rejects with a helpful 422 otherwise. */
   upload: (surveyId: string, assetType: ImportableAssetType, file: LocalFile, options?: UploadOptions) => {
