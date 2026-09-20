@@ -107,6 +107,18 @@ export function ChatBubble({ message, onRetry, showContext = true }: ChatBubbleP
             <MarkdownMessage text={message.text} />
           )}
         </View>
+        {message.sources && message.sources.length > 0 ? (
+          <View style={styles.sources} accessibilityLabel="Knowledge-base sources for this answer">
+            <AppText variant="small" tone="muted">
+              Sources (local knowledge base)
+            </AppText>
+            {message.sources.map((s, i) => (
+              <AppText key={i} variant="small" tone="muted">
+                {s.title} — {s.section}
+              </AppText>
+            ))}
+          </View>
+        ) : null}
         {message.responder ? (
           <AppText variant="small" tone="muted" style={styles.meta}>
             Answered by {responderLabel(message.responder)}
@@ -133,6 +145,7 @@ const styles = StyleSheet.create({
   bubble: { borderWidth: 1, borderRadius: 0, padding: 12 },
   thinking: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   meta: { paddingLeft: 4 },
+  sources: { paddingLeft: 4, gap: 2 },
   flex: { flex: 1, minWidth: 120 },
   blocks: { gap: 8 },
   list: { gap: 4 },

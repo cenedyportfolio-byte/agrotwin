@@ -18,11 +18,21 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 from app.config import settings
+
+# Ultralytics writes settings.json (and would download assets) under the
+# user profile on C: by default; everything project-related stays on E:.
+# Must be set before the package is first imported, which only happens lazily
+# below, and the directory must already exist or Ultralytics silently falls
+# back to the current working directory.
+_YOLO_CONFIG_DIR = settings.data_dir.parent / ".cache" / "ultralytics"
+_YOLO_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("YOLO_CONFIG_DIR", str(_YOLO_CONFIG_DIR))
 
 log = logging.getLogger(__name__)
 

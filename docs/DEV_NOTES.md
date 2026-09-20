@@ -133,3 +133,21 @@ machine's specs — RTX 4060 Ti (16GB VRAM, ~14GB free at idle), 32GB RAM, i5-13
 If the GPU is heavily loaded by a training job and Ollama needs to fall back to CPU, a lighter
 `qwen2.5:7b-instruct-q4_K_M` or `llama3.1:8b` is the documented fallback (not installed by
 default — pull it only if you hit timeouts during a long training run).
+
+## Ultralytics (YOLO) in the GPU venv (2026-09-20)
+
+`ultralytics` is installed in `backend/.venv-gpu` for the trained-detector
+plug-in (`detector_service.py`); `requirements-gpu.txt` lists it with the
+other GPU extras. Two things to know:
+
+- It depends on `opencv-python`, which installs a second `cv2` on top of the
+  `opencv-python-headless` the API uses. Keep only headless (commands in
+  `requirements-gpu.txt`); both work for Ultralytics, two at once can corrupt
+  `cv2`.
+- It writes `settings.json` under the user profile on C: by default.
+  `detector_service.py` sets `YOLO_CONFIG_DIR` to `.cache/ultralytics/`
+  (and creates it — if the directory is missing Ultralytics silently falls
+  back to the current working directory) before the package is first
+  imported, so nothing lands on C:. Pretrained weights, if ever downloaded
+  by name, go to the current working directory — download them into
+  `.cache/` explicitly.

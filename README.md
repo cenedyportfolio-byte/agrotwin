@@ -113,18 +113,33 @@ layer shows exactly which pixels were counted.
 It is classical computer vision on real imagery, **not** a trained model:
 it cannot identify weed species, disease or pests, and it never recommends
 pesticides. Trained detectors plug in as manifests under `data/models/`
-(Ultralytics YOLO/YOLO-seg; see Settings) — none ships, because that needs
-labelled imagery of this crop. See `docs/PHASE_STATUS.md` for the full list
-of what is real, what is approximate, and what is still open.
+(Ultralytics YOLO/YOLO-seg, installed in `.venv-gpu`; see Settings) — none
+ships, because that needs labelled imagery of this crop. To add one:
+
+```
+data/models/soy-weeds-v1/
+    manifest.json   {"name": "soy-weeds-v1", "task": "weed_detection",
+                     "framework": "ultralytics", "weights": "best.pt",
+                     "labels": ["waterhemp", "palmer_amaranth"],
+                     "trained_on": "…", "input_gsd_m": 0.02}
+    best.pt
+```
+
+It runs on the orthomosaic during the next analysis (tiled at its own GSD,
+results georeferenced and typed `soy-weeds-v1:waterhemp`). See
+`docs/PHASE_STATUS.md` for the full list of what is real, what is
+approximate, and what is still open.
 
 ## Assistant and knowledge base
 
 `/ask-ai` answers from the survey's measured numbers plus a local agronomy
 knowledge base (`backend/app/knowledge/*.md`: growth stages, indices,
 scouting, weeds, survey practice, stress symptoms) retrieved with BM25 —
-fully offline, no embedding model. A local Ollama model writes the answer
+fully offline, no embedding model. A local Ollama model
+(`qwen2.5:14b-instruct-q4_K_M`, see `docs/DEV_NOTES.md`) writes the answer
 when one is running; otherwise a template responder does, and every answer
-says which and lists its sources. Add or edit a Markdown file to extend it.
+says which and lists its sources (web and mobile). Add or edit a Markdown
+file to extend it — the index rebuilds on the next question, no restart.
 
 ## Map sources and licensing
 

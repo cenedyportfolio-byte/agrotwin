@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { KnowledgeSource } from "@/types";
 
 export type ChatRole = "user" | "assistant";
 
@@ -11,6 +12,8 @@ export interface ChatMessage {
   responder?: string;
   /** Structured data the answer was grounded in — shown under "What the assistant looked at". */
   contextUsed?: Record<string, unknown>;
+  /** Knowledge-base passages the answer cites. */
+  sources?: KnowledgeSource[];
   status?: "sending" | "error";
   errorMessage?: string;
   /** Reserved for voice: set when the message came from speech input. */

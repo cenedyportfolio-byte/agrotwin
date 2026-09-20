@@ -97,8 +97,14 @@ def _load_sections() -> list[_Doc]:
     return docs
 
 
+def _knowledge_stamp() -> tuple:
+    """Changes whenever a knowledge file is added, removed or edited, so the
+    index rebuilds on the next question without a backend restart."""
+    return tuple(sorted((p.name, p.stat().st_mtime_ns) for p in KNOWLEDGE_DIR.glob("*.md")))
+
+
 @lru_cache(maxsize=1)
-def _index():
+def _build_index(stamp: tuple):
     docs = _load_sections()
     df: dict[str, int] = {}
     for d in docs:
@@ -106,6 +112,10 @@ def _index():
             df[t] = df.get(t, 0) + 1
     avg_len = sum(d.length for d in docs) / max(len(docs), 1)
     return docs, df, avg_len
+
+
+def _index():
+    return _build_index(_knowledge_stamp())
 
 
 def search(query: str, k: int = 3) -> list[KnowledgePassage]:

@@ -143,6 +143,17 @@ Roadmap phases per the original spec, and what's actually done.
   the tiled inference runner exist, but a model needs labelled imagery of
   this crop, which this project doesn't have. Until then the analysis is
   classical CV (vegetation indices + crop-row geometry), labelled as such.
+  The path itself is proven (2026-09-20): `ultralytics` 8.4 is installed in
+  `.venv-gpu` (`requirements-gpu.txt`), and a throwaway COCO `yolov8n-seg`
+  manifest was discovered, reported `ready`, and run over the whole 2 cm
+  orthomosaic in 16.7 s on the GPU, returning georeferenced polygons inside
+  the field — then deleted, because a generic model "detecting persons" in a
+  soybean field is exactly the fake finding the app refuses to show. Drop a
+  real model under `data/models/<name>/` and it runs on the next analysis.
+- 3DGS quality is only checked by a single training-view L1 (0.071); there is
+  no held-out PSNR/SSIM/LPIPS split (`docs/TECHNICAL_AUDIT_2026-09-20.md`
+  §1.3). Adding a ~5 % held-out set to `gsplat_train.py` is the next step
+  for a defensible number.
 - Inter-row weed candidates need an open canopy; the only survey on this
   machine (June, 40 ft) has 84 % canopy closure, so none can be measured.
 - Basemap: the default is now open data (USGS/NAIP over the US, Sentinel-2

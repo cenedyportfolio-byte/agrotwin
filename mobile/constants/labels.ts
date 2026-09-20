@@ -21,7 +21,14 @@ export const DETECTION_TYPE_DESCRIPTION: Record<string, string> = {
 };
 
 export function detectionTypeLabel(type: string): string {
-  return DETECTION_TYPE_LABEL[type] ?? type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+  if (DETECTION_TYPE_LABEL[type]) return DETECTION_TYPE_LABEL[type];
+  // Trained-detector zones are typed "<model name>:<label>" by the backend.
+  const colon = type.indexOf(":");
+  if (colon > 0) {
+    const label = type.slice(colon + 1).replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+    return `${label} (model ${type.slice(0, colon)})`;
+  }
+  return type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
 export const SEVERITY_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };

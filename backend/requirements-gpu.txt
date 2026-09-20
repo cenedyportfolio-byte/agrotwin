@@ -1,0 +1,25 @@
+# Optional GPU / ML extras for backend/.venv-gpu (Python 3.11). The base API
+# runs from requirements.txt alone; these enable the photogrammetry, splat
+# training and trained-detector features. Install with the caches on E::
+#   uv pip install --python backend\.venv-gpu\Scripts\python.exe -r backend\requirements-gpu.txt
+#
+# torch must be the CUDA build matching the installed toolkit (CUDA 13.0 here):
+#   uv pip install --python backend\.venv-gpu\Scripts\python.exe torch torchvision --index-url https://download.pytorch.org/whl/cu130
+# gsplat compiles its CUDA kernels on first use (needs MSVC + CUDA on PATH: run_gpu.ps1).
+# pycolmap's PyPI wheel is CPU-only; GPU SfM uses the COLMAP CLI under tools/colmap/.
+
+-r requirements.txt
+
+torch>=2.4
+torchvision>=0.19
+gsplat>=1.5
+pycolmap>=3.11
+plyfile>=1.0
+scipy>=1.13
+
+# Trained detector plug-in (data/models/<name>/manifest.json, framework "ultralytics").
+# ultralytics depends on opencv-python, which would shadow the headless build the
+# API uses; after installing, run:
+#   uv pip uninstall --python backend\.venv-gpu\Scripts\python.exe opencv-python
+#   uv pip install  --python backend\.venv-gpu\Scripts\python.exe --reinstall --no-deps opencv-python-headless
+ultralytics>=8.3

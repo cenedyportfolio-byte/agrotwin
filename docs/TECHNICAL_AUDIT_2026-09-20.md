@@ -325,3 +325,26 @@ Given this project's stated goals (fully offline, single laptop, no cloud), the 
 3. **Chunking**: keep the heading-based structural chunking — it already produces coherent, self-contained passages, which is the hard part; fixed-token windowing would be a regression here, not an improvement.
 4. **Extend the knowledge base with structured, per-survey retrieval**: today, RAG only searches the static agronomy Markdown files. The next real gain would be indexing *this survey's own history* (past `AnalysisResult` rows, `DetectionZone` records with their `recommended_action` text) into the same retriever, so "what changed since last month" can cite the actual prior measurement rather than relying purely on `llm_service.build_field_context()`'s hand-assembled prior-survey comparison.
 5. **Citations**: keep the same `title/section/snippet/score` shape — it's simple and already correctly wired end-to-end on web; the only actual work needed is closing the mobile gap identified above.
+
+---
+
+## Addendum (same day, after the audit)
+
+Resolved in the repository after this audit was written, so the sections
+above describe HEAD `c682d83` and not the current state:
+
+- §3.2 "`ultralytics` is not an installed dependency" — now installed in
+  `backend/.venv-gpu` and listed in `backend/requirements-gpu.txt`; the
+  detector path was exercised end to end with a throwaway pretrained model
+  (see `docs/PHASE_STATUS.md`, "Still open") and the model removed again.
+- §4.1 mobile `detectionTypeLabel()` colon convention — handled
+  (`mobile/constants/labels.ts`).
+- §4.2 "the mobile client does not display citations" — `sources` now flows
+  through `mobile/types/api.ts` → `features/ai/hooks.ts` →
+  `stores/chatStore.ts` → `components/ai/ChatBubble.tsx`.
+- §4.2 "rebuilds only on a backend restart" — the BM25 index now rebuilds
+  when a knowledge file's mtime, name set or count changes.
+
+Still as described: no held-out PSNR/SSIM/LPIPS for 3DGS (§1.3), no ONNX
+export / Grad-CAM / RT-DETR (§3.2–3.3, not in the project spec), no
+training-data ingestion or annotation tooling (§3.1).
