@@ -60,19 +60,44 @@ external drive and are referenced by absolute path — nothing is duplicated.
 This matches the precedent already set by the `CesiumSplatData` project
 (same machine, same issue, documented in its own README).
 
-## GPU
+## GPU vs CPU: where each processing stage runs (2026-09-24)
 
-RTX 3050 6GB laptop GPU is available (confirmed via `nvidia-smi`). Not
-needed for the current phases (dashboard, Cesium field map, metadata
-extraction all run fine on CPU). It matters starting at:
+Machine: RTX 4060 Ti 16 GB, i5-13600K (14 cores / 20 threads), survey data
+on an HDD. Every heavy stage has the same shape (`app/services/gpu.py`):
+read/decode on a pool of CPU threads, per-pixel math on the GPU with torch,
+numpy fallback when CUDA is missing (so `backend/.venv`, CPU-only, still
+works, only slower). Measured on the 1,378-frame survey `8dab5067ab14`:
 
-- Phase 7 (AI analysis) — YOLO/segmentation model inference
-- Phase 9 (advanced 3D) — Gaussian splat training, same GPU already used
-  successfully by the `CesiumSplatData` project (`gsplat` + CUDA toolchain
-  at `~/venvs/splat`, `~/cuda-apt/toolchain`)
+| Stage | Runs on | Before | After | Output vs before |
+|---|---|---|---|---|
+| Quick RGB mosaic (`mosaic_service`) | GPU: undistort, warp, feathered blend on a canvas kept in VRAM; JPEG decode on 16 threads | 14.9 min | 93 s | pixel-identical (max diff 0) |
+| Per-frame ExG (new frames only) | GPU math; decode on threads | 3.3 min | 19 s | identical on all 1,378 frames |
+| Tile pyramid (`tile_service`) | CPU threads: warp per thread, WebP encode in a pool | 80 s | 7 s | deepest zoom byte-identical; coarser zooms now built from the lossless tiles, not re-decoded WebP (≤1 grey level mean diff) |
+| exg_map cells (`analysis_service`) | GPU | 1.8 s | 0.3 s | identical cells |
+| Row analysis (`weed_service`) | CPU (OpenCV/scipy) | 3.5 s | 2.8 s | identical metrics |
+| Vegetation mask | reuses the row analysis' read | 1.9 s | 0.1 s | identical raster |
 
-No need to route AgroTwin's own venv through that CUDA toolchain until CV
-work actually starts.
+What stays on the CPU, and why:
+
+- **JPEG decode**: GeForce cards have no hardware JPEG decoder; nvJPEG
+  measured no faster than libjpeg-turbo, which scales ~6x across threads.
+- **WebP/PNG encode**: there is no GPU encoder; a thread pool gives ~10x.
+- **Disk reads**: the mosaic is now bound by reading 1,378 JPEGs off the
+  HDD. An SSD is the next speed-up there, not more GPU.
+- **Row geometry** (OpenCV rotations, scipy labelling): a few seconds,
+  multi-threaded already; porting would change results for little gain.
+- **API, SQLite, GeoJSON**: I/O-bound, milliseconds per request.
+
+Knobs: `GDAL_NUM_THREADS=ALL_CPUS` is set in `app/config.py` (multi-threaded
+deflate decode/encode, lossless; a full orthomosaic read went 1.0 s →
+0.12 s). `gpu.GPU_HEADROOM_BYTES` keeps 1.5 GB of VRAM free and falls back
+to the CPU otherwise. Ollama's model takes ~9.5 GB while loaded, so a mosaic
+started right after a chat can land on the CPU path.
+`tile_service.PYRAMID_RAM_BYTES` (3 GB) caps the deepest zoom kept in RAM;
+past it, tiles are re-read from disk.
+The Ollama LLM already runs 100% on the GPU. Gaussian-splat training
+(gsplat) and COLMAP dense/matching use CUDA; bundle adjustment would need a
+CUDA Ceres build (postponed with the rest of the 3D pipeline).
 
 ## Cesium: no Ion token
 

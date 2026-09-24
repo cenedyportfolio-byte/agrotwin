@@ -42,9 +42,10 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services import gpu
 from app.services import multispectral_service as ms
 from app.services import storage_service
-from app.services.metadata_service import read_dji_xmp
+from app.services.metadata_service import dji_xmp_from_image
 
 log = logging.getLogger(__name__)
 
@@ -365,42 +366,177 @@ def build_rgb_mosaic(survey: models.Survey, out_path: Path, epsg: int) -> dict |
     if len(geoms) < 3:
         return None
     E0, N0, W, H = _grid_for(geoms, 1.0, RGB_GSD_M)
-    canvas = np.zeros((H, W, 3), np.float32)
-    wsum = np.zeros((H, W), np.float32)
     G, gt = _ground_to_grid(E0, N0, RGB_GSD_M)
     by_key = {(r.frame_key or r.id): r for r in survey.images if r.band == "RGB"}
+    # plain values only: the decode workers run on other threads
+    jobs = [(key, g, by_key[key].path, by_key[key].width, by_key[key].height, by_key[key].filename)
+            for key, g in geoms.items()]
 
+    acc = _GpuMosaic.create(H, W, 3) or _CpuMosaic(H, W, 3)
+    log.info("rgb mosaic: %d frames into %dx%d @ %.0f cm on %s", len(jobs), W, H, RGB_GSD_M * 100, acc.device)
     used = 0
-    for key, g in geoms.items():
-        row = by_key[key]
-        try:
-            with ms.open_image_safely(row.path) as im:
-                # the draft target must keep the frame's aspect: PIL only takes a
-                # 1/2 scale when *both* dimensions still cover the request, so a
-                # square target silently decodes 4:3 frames at full resolution
-                im.draft("RGB", (RGB_DRAFT_MAX, round(RGB_DRAFT_MAX * im.height / im.width)))
-                im = im.convert("RGB")
-                scale = im.size[0] / (row.width or im.size[0])
-                img = np.asarray(im, dtype=np.float32)
-            xmp = read_dji_xmp(row.path)
-        except OSError as exc:
-            log.warning("mosaic: skipping %s (%s)", row.filename, exc)
+    for (key, g, path, width, height, filename), decoded in gpu.prefetch(jobs, lambda j: _decode_rgb_frame(j[2], j[3])):
+        if isinstance(decoded, OSError):
+            log.warning("mosaic: skipping %s (%s)", filename, decoded)
             continue
-        g = _with_dewarp(g, xmp, row.width or img.shape[1], row.height or img.shape[0])
-        valid_src = None
-        if g.dewarp is not None:
-            img, valid_src = undistort(img, g.dewarp, scale)
+        img, scale, xmp = decoded
+        g = _with_dewarp(g, xmp, width or img.shape[1], height or img.shape[0])
         M, t = _pixel_to_ground_affine(g, scale)
-        _paste(canvas, wsum, img, M, t, G, gt, RGB_GSD_M, valid_src)
+        acc.add(img, M, t, G, gt, g.dewarp, scale)
         used += 1
-        if used % 50 == 0:
+        if used % 100 == 0:
             log.info("rgb mosaic: %d/%d frames", used, len(geoms))
 
-    valid = wsum > MIN_WEIGHT
-    out = np.zeros((H, W, 3), np.uint8)
-    out[valid] = np.clip(canvas[valid] / wsum[valid][:, None], 1, 255).astype(np.uint8)  # 0 reserved for nodata
+    out = acc.result_uint8()
     _write_geotiff(out_path, out, E0, N0, RGB_GSD_M, epsg, nodata=0)
-    return {"frames": used, "width": W, "height": H, "gsd_m": RGB_GSD_M}
+    return {"frames": used, "width": W, "height": H, "gsd_m": RGB_GSD_M, "device": acc.device}
+
+
+def _decode_rgb_frame(path: Path, width: int | None):
+    """(uint8 HxWx3 frame at ~half resolution, scale vs full-res, DJI XMP), or the
+    OSError. Runs on a worker thread: the file is read once and the XMP comes
+    from the same open image."""
+    try:
+        with ms.open_image_safely(path) as im:
+            xmp = dji_xmp_from_image(im)
+            # the draft target must keep the frame's aspect: PIL only takes a
+            # 1/2 scale when *both* dimensions still cover the request, so a
+            # square target silently decodes 4:3 frames at full resolution
+            im.draft("RGB", (RGB_DRAFT_MAX, round(RGB_DRAFT_MAX * im.height / im.width)))
+            im = im.convert("RGB")
+            scale = im.size[0] / (width or im.size[0])
+            return np.array(im), scale, xmp  # writable copy for torch.from_numpy
+    except OSError as exc:
+        return exc
+
+
+def _patch_bounds(img_w: int, img_h: int, M, t, G, gt, H: int, W: int):
+    """Grid window a frame lands in, and PIL-style AFFINE coefficients mapping
+    that window's (x, y) back to frame pixels; None if it misses the grid."""
+    A = G @ M  # pixel -> grid
+    b = G @ t + gt
+    corners = np.array([[0, 0], [img_w, 0], [img_w, img_h], [0, img_h]]) @ A.T + b
+    c0, r0 = np.floor(corners.min(axis=0)).astype(int)
+    c1, r1 = np.ceil(corners.max(axis=0)).astype(int)
+    c0, r0 = max(c0, 0), max(r0, 0)
+    c1, r1 = min(c1, W), min(r1, H)
+    if c1 <= c0 or r1 <= r0:
+        return None
+    inv = np.linalg.inv(A)
+    off = inv @ (np.array([c0, r0]) - b)
+    coeffs = [inv[0, 0], inv[0, 1], off[0], inv[1, 0], inv[1, 1], off[1]]
+    return c0, r0, c1, r1, coeffs
+
+
+class _CpuMosaic:
+    """Accumulator in host memory (the original path; per-frame work still
+    uses the GPU helpers when CUDA exists). Used when the canvas doesn't fit
+    in free GPU memory."""
+
+    def __init__(self, H: int, W: int, C: int):
+        self.device = "cpu canvas" + (" + gpu warp" if _torch_cuda() else "")
+        self.canvas = np.zeros((H, W, C), np.float32)
+        self.wsum = np.zeros((H, W), np.float32)
+
+    def add(self, img_u8, M, t, G, gt, dewarp, scale):
+        img = img_u8.astype(np.float32)
+        valid_src = None
+        if dewarp is not None:
+            img, valid_src = undistort(img, dewarp, scale)
+        _paste(self.canvas, self.wsum, img, M, t, G, gt, RGB_GSD_M, valid_src)
+
+    def result_uint8(self) -> np.ndarray:
+        valid = self.wsum > MIN_WEIGHT
+        out = np.zeros(self.canvas.shape, np.uint8)
+        out[valid] = np.clip(self.canvas[valid] / self.wsum[valid][:, None], 1, 255).astype(np.uint8)  # 0 = nodata
+        return out
+
+
+class _GpuMosaic:
+    """Canvas and weight sum live on the GPU for the whole build: each frame is
+    uploaded once (uint8), undistorted, weighted, warped and accumulated
+    there, and the finished mosaic is downloaded once. Same arithmetic as
+    _CpuMosaic (same grid_sample calls, same float32 weights)."""
+
+    def __init__(self, torch, H: int, W: int, C: int):
+        self.torch, self.H, self.W, self.C = torch, H, W, C
+        self.device = f"gpu ({torch.cuda.get_device_name(0)})"
+        self.canvas = torch.zeros((C, H, W), device="cuda", dtype=torch.float32)
+        self.wsum = torch.zeros((H, W), device="cuda", dtype=torch.float32)
+        self._maps: dict = {}
+        self._weights: dict = {}
+
+    @classmethod
+    def create(cls, H: int, W: int, C: int) -> "_GpuMosaic | None":
+        torch = gpu.cuda_torch()
+        if torch is None or not gpu.gpu_can_hold((C + 1) * H * W * 4):
+            return None
+        try:
+            return cls(torch, H, W, C)
+        except torch.cuda.OutOfMemoryError:
+            gpu.release_gpu_memory()
+            return None
+
+    def _undistort(self, t, d: Dewarp, scale: float):
+        torch = self.torch
+        h, w = t.shape[1:]
+        key = (d, w, h, round(scale, 6))
+        if key not in self._maps:
+            map_x, map_y = _undistort_maps(d, w, h, scale)
+            gx = torch.from_numpy(map_x).to("cuda")
+            gy = torch.from_numpy(map_y).to("cuda")
+            inside = (gx >= 0) & (gx < w - 1) & (gy >= 0) & (gy < h - 1)
+            grid = torch.stack([gx / max(w - 1, 1) * 2 - 1, gy / max(h - 1, 1) * 2 - 1], dim=-1)[None]
+            self._maps[key] = (grid, inside)
+        grid, inside = self._maps[key]
+        out = torch.nn.functional.grid_sample(t[None], grid, mode="bilinear", padding_mode="zeros", align_corners=True)[0]
+        return torch.where(inside, out, torch.zeros((), device="cuda")), inside
+
+    def _weight(self, w: int, h: int, inside):
+        if (w, h) not in self._weights:
+            self._weights[(w, h)] = self.torch.from_numpy(_weight_image(w, h)).to("cuda")
+        base = self._weights[(w, h)]
+        return base if inside is None else self.torch.where(inside, base, self.torch.zeros((), device="cuda"))
+
+    def add(self, img_u8, M, t, G, gt, dewarp, scale):
+        torch = self.torch
+        h, w = img_u8.shape[:2]
+        bounds = _patch_bounds(w, h, M, t, G, gt, self.H, self.W)
+        if bounds is None:
+            return
+        c0, r0, c1, r1, (a, b, c, d, e, f) = bounds
+        img = torch.from_numpy(np.ascontiguousarray(img_u8)).to("cuda").permute(2, 0, 1).to(torch.float32)
+        inside = None
+        if dewarp is not None:
+            img, inside = self._undistort(img, dewarp, scale)
+        weight = self._weight(w, h, inside)
+
+        ys, xs = torch.meshgrid(
+            torch.arange(r1 - r0, device="cuda", dtype=torch.float32),
+            torch.arange(c1 - c0, device="cuda", dtype=torch.float32),
+            indexing="ij",
+        )
+        u = a * xs + b * ys + c
+        v = d * xs + e * ys + f
+        grid = torch.stack([u / max(w - 1, 1) * 2 - 1, v / max(h - 1, 1) * 2 - 1], dim=-1)[None]
+        stack = torch.cat([img, weight[None]], dim=0)[None]
+        warped = torch.nn.functional.grid_sample(stack, grid, mode="bilinear", padding_mode="zeros", align_corners=True)[0]
+        patch, wpatch = warped[:-1], warped[-1]
+        wpatch = torch.where(wpatch > MIN_WEIGHT, wpatch, torch.zeros((), device="cuda"))
+        self.canvas[:, r0:r1, c0:c1] += patch * wpatch
+        self.wsum[r0:r1, c0:c1] += wpatch
+
+    def result_uint8(self) -> np.ndarray:
+        torch = self.torch
+        valid = self.wsum > MIN_WEIGHT
+        out = torch.zeros((self.H, self.W, self.C), device="cuda", dtype=torch.uint8)
+        for ch in range(self.C):  # one channel at a time keeps the temporaries small
+            val = (self.canvas[ch] / self.wsum).clamp(1, 255).to(torch.uint8)  # 0 = nodata
+            out[..., ch] = torch.where(valid, val, torch.zeros((), device="cuda", dtype=torch.uint8))
+        result = out.cpu().numpy()
+        del self.canvas, self.wsum, self._maps, self._weights, out
+        gpu.release_gpu_memory()
+        return result
 
 
 def build_index_mosaics(survey: models.Survey, out_dir: Path, epsg: int) -> dict[str, dict]:

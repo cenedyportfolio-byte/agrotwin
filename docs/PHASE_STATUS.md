@@ -25,7 +25,9 @@ Roadmap phases per the original spec, and what's actually done.
       (a) manual import of any GeoTIFF; (b) **quick mosaics built from the
       survey's own frames** (`mosaic_service.py`, direct georeferencing from
       RTK positions, gimbal yaw, AGL altitude, calibrated intrinsics and DJI
-      DewarpData; GPU warp path with numpy fallback); (c) OpenDroneMap
+      DewarpData; undistort, warp and blend on the GPU into a canvas kept in
+      VRAM, numpy fallback; 1,378 frames in ~93 s, tile pyramid in ~7 s —
+      stage map in docs/DEV_NOTES.md); (c) OpenDroneMap
       orthophotos via `scripts/import_odm.py`. Documented limits of (b):
       flat-ground assumption, AGL relative to takeoff, no colour balancing,
       no bundle adjustment — a "2D quick map", not photogrammetry.

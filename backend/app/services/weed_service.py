@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -87,8 +88,29 @@ class RowAnalysis:
         return d
 
 
+_veg_cache: tuple | None = None  # (file identity, result) of the last read
+_veg_lock = threading.Lock()
+
+
 def _load_vegetation(path: Path):
-    """(exg, veg, valid, transform, crs, gsd) at ~GSD_M from the orthomosaic."""
+    """(exg, veg, valid, transform, crs, gsd) at ~GSD_M from the orthomosaic.
+
+    The last result is kept (keyed on the file's path, size and mtime, so a
+    rebuilt mosaic is re-read): an analysis run calls this for the row
+    analysis and again for the vegetation mask. Callers must not modify the
+    returned arrays."""
+    global _veg_cache
+    st = path.stat()
+    key = (str(path.resolve()), st.st_size, st.st_mtime_ns)
+    with _veg_lock:
+        if _veg_cache is not None and _veg_cache[0] == key:
+            return _veg_cache[1]
+        out = _read_vegetation(path)
+        _veg_cache = (key, out)
+        return out
+
+
+def _read_vegetation(path: Path):
     import rasterio
     from rasterio.enums import Resampling
 

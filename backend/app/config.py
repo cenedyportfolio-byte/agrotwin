@@ -1,6 +1,12 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+# GDAL (de)compresses GeoTIFF blocks on every core instead of one: a full
+# read of a survey orthomosaic drops from ~1.0 s to ~0.12 s. Lossless, so
+# the pixels are identical. Set here because every entry point imports config.
+os.environ.setdefault("GDAL_NUM_THREADS", "ALL_CPUS")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 AGROTWIN_ROOT = BACKEND_DIR.parent

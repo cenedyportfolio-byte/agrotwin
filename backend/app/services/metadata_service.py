@@ -51,7 +51,15 @@ def read_dji_xmp(path: Path) -> dict:
     """Flat dict of the DJI XMP Description (keys like 'GimbalYawDegree'). {} if absent."""
     try:
         with Image.open(path) as im:
-            xmp = im.getxmp()
+            return dji_xmp_from_image(im)
+    except Exception:
+        return {}
+
+
+def dji_xmp_from_image(im: Image.Image) -> dict:
+    """read_dji_xmp for an image that is already open (saves re-reading the file)."""
+    try:
+        xmp = im.getxmp()
     except Exception:
         return {}
     try:

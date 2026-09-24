@@ -54,8 +54,8 @@ from shapely.ops import unary_union
 from sqlalchemy.orm import Session
 
 from app import models
-from app.services import multispectral_service
-from app.services.vision_service import VEGETATION_THRESHOLD, analyze_image_vegetation
+from app.services import gpu, multispectral_service
+from app.services.vision_service import VEGETATION_THRESHOLD
 
 # ~5 m square footprint per frame sample (degrees at mid-latitude). Photos on
 # the same flight line overlap heavily, so neighbouring flagged frames merge
@@ -172,50 +172,59 @@ def _anchor(rows: list[models.SurveyImage]) -> models.SurveyImage | None:
 def _measure_frames(frames: dict[str, list[models.SurveyImage]], remeasure: bool) -> tuple[list[Sample], str]:
     """Returns (samples, method). Uses NDVI for every frame when the survey
     has multispectral bands; never mixes the two indices in one analysis.
-    Frames measured by an earlier run are reused unless `remeasure`."""
-    has_ms = any({"NIR", "RED"} <= {r.band for r in rows} for rows in frames.values())
-    samples: list[Sample] = []
+    Frames measured by an earlier run are reused unless `remeasure`. The
+    frames that do need measuring are read on a thread pool (RGB: decoded in
+    parallel, index on the GPU); ORM rows are only touched on this thread."""
+    from app.services.vision_service import analyze_images_vegetation
 
-    for n, rows in enumerate(frames.values(), 1):
-        if n % 100 == 0:
-            log.info("measured %d/%d frames", n, len(frames))
+    has_ms = any({"NIR", "RED"} <= {r.band for r in rows} for rows in frames.values())
+    slots: list[Sample | None] = []  # keeps the frames' original order
+    todo: list[tuple[int, list[models.SurveyImage], models.SurveyImage, dict]] = []
+
+    for rows in frames.values():
         anchor = _anchor(rows)
         if anchor is None:
             continue
         if not remeasure and anchor.vegetation_fraction is not None and (anchor.ndvi_mean is not None or not has_ms):
-            samples.append((anchor, anchor.vegetation_fraction))
+            slots.append((anchor, anchor.vegetation_fraction))
             continue
         bands = {r.band: r.path for r in rows}
+        if (has_ms and not {"NIR", "RED"} <= bands.keys()) or (not has_ms and "RGB" not in bands):
+            continue
+        slots.append(None)
+        todo.append((len(slots) - 1, rows, anchor, bands))
 
-        if has_ms:
-            if not {"NIR", "RED"} <= bands.keys():
-                continue
+    if has_ms:
+        def stats_for(bands: dict):
             try:
-                stats = multispectral_service.compute_frame_stats(bands)
+                return multispectral_service.compute_frame_stats(bands)
             except (OSError, ValueError, multispectral_service.BandsUnavailableError) as exc:
-                log.warning("skipping frame %s — unreadable band file: %s", anchor.frame_key, exc)
-                continue
-            if stats.vegetation_fraction is None:
-                continue
-            for r in rows:
-                r.vegetation_fraction = stats.vegetation_fraction
-                r.ndvi_mean = stats.ndvi_mean
-                r.ndre_mean = stats.ndre_mean
-                r.gndvi_mean = stats.gndvi_mean
-            samples.append((anchor, stats.vegetation_fraction))
-        else:
-            if "RGB" not in bands:
-                continue
-            try:
-                exg = analyze_image_vegetation(bands["RGB"])
-            except (ValueError, OSError) as exc:
-                log.warning("skipping frame %s — unreadable image: %s", anchor.frame_key, exc)
-                continue
-            for r in rows:
-                r.vegetation_fraction = exg.vegetation_fraction
-            samples.append((anchor, exg.vegetation_fraction))
+                return exc
 
-    return samples, ("ndvi" if has_ms else "exg")
+        results = (res for _, res in gpu.prefetch([t[3] for t in todo], stats_for))
+    else:
+        results = (res for _, res in analyze_images_vegetation([t[3]["RGB"] for t in todo]))
+
+    for n, ((slot, rows, anchor, _), res) in enumerate(zip(todo, results), 1):
+        if n % 100 == 0:
+            log.info("measured %d/%d frames", n, len(todo))
+        if isinstance(res, Exception):
+            log.warning("skipping frame %s — unreadable %s: %s", anchor.frame_key, "band file" if has_ms else "image", res)
+            continue
+        if has_ms:
+            if res.vegetation_fraction is None:
+                continue
+            for r in rows:
+                r.vegetation_fraction = res.vegetation_fraction
+                r.ndvi_mean = res.ndvi_mean
+                r.ndre_mean = res.ndre_mean
+                r.gndvi_mean = res.gndvi_mean
+        else:
+            for r in rows:
+                r.vegetation_fraction = res.vegetation_fraction
+        slots[slot] = (anchor, res.vegetation_fraction)
+
+    return [s for s in slots if s is not None], ("ndvi" if has_ms else "exg")
 
 
 def analyze_survey(
@@ -285,6 +294,29 @@ def _exg_cover(data: np.ndarray, nodata) -> tuple[np.ndarray, np.ndarray]:
     return valid, valid & (exg > VEGETATION_THRESHOLD)
 
 
+def _cover_torch(torch, data: np.ndarray, nodata, method: str):
+    """_exg_cover / _ndvi_cover on the GPU: the same float32 arithmetic and
+    thresholds, so every cell's pixel counts are identical to the CPU path."""
+    d = torch.from_numpy(data).to("cuda")
+    if method == "exg_map":
+        if d.shape[0] >= 4:
+            valid = d[3] > 0
+        elif nodata is not None:
+            valid = ~torch.all(d[:3] == nodata, dim=0)
+        else:
+            valid = torch.any(d[:3] > 0, dim=0)
+        rgb = d[:3].to(torch.float32)
+        total = rgb.sum(dim=0)
+        total[total == 0] = 1.0
+        exg = (2 * rgb[1] - rgb[0] - rgb[2]) / total
+        return valid, valid & (exg > VEGETATION_THRESHOLD)
+    band = d[0].to(torch.float32)
+    valid = ~torch.isnan(band)
+    if nodata is not None and not np.isnan(nodata):
+        valid &= band != nodata
+    return valid, valid & (band > multispectral_service.NDVI_VEGETATION_THRESHOLD)
+
+
 def _raster_cells(path: Path, method: str):
     """(cells, transform, crs, cell_px) with cells = (row, col, vegetation cover)
     for every CELL_M square that has enough valid pixels, or None when the
@@ -309,15 +341,26 @@ def _raster_cells(path: Path, method: str):
         if rows == 0 or cols == 0:
             return None
         strip = max(1, READ_STRIP_PX // cell_px)
+        # per-pixel index + per-cell counts on the GPU (~8x faster), numpy without CUDA
+        strip_bytes = len(bands) * strip * cell_px * cols * cell_px
+        torch = gpu.cuda_torch() if gpu.gpu_can_hold(strip_bytes * 12) else None
         cells: list[tuple[int, int, float]] = []
         for r0 in range(0, rows, strip):
             nr = min(strip, rows - r0)
             data = src.read(bands, window=Window(0, r0 * cell_px, cols * cell_px, nr * cell_px))
-            valid, veg = cover_fn(data, src.nodata)
-            n_valid = valid.reshape(nr, cell_px, cols, cell_px).sum(axis=(1, 3))
-            n_veg = veg.reshape(nr, cell_px, cols, cell_px).sum(axis=(1, 3))
+            if torch is not None:
+                valid, veg = _cover_torch(torch, data, src.nodata, method)
+                n_valid = valid.reshape(nr, cell_px, cols, cell_px).sum(dim=(1, 3)).cpu().numpy()
+                n_veg = veg.reshape(nr, cell_px, cols, cell_px).sum(dim=(1, 3)).cpu().numpy()
+            else:
+                valid, veg = cover_fn(data, src.nodata)
+                n_valid = valid.reshape(nr, cell_px, cols, cell_px).sum(axis=(1, 3))
+                n_veg = veg.reshape(nr, cell_px, cols, cell_px).sum(axis=(1, 3))
             for r, c in zip(*np.nonzero(n_valid >= MIN_VALID_FRACTION * cell_px * cell_px)):
                 cells.append((r0 + int(r), int(c), float(n_veg[r, c] / n_valid[r, c])))
+    if torch is not None:
+        del valid, veg
+        gpu.release_gpu_memory()
     return cells, tf, crs, cell_px
 
 
