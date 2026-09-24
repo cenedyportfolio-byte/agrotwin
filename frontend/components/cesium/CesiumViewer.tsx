@@ -30,8 +30,13 @@ const ESRI_TERRAIN_URL =
   "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer";
 export const TERRAIN_PROVIDER: "esri" | "ellipsoid" =
   process.env.NEXT_PUBLIC_TERRAIN === "ellipsoid" ? "ellipsoid" : "esri";
-const TERRAIN_METADATA_TIMEOUT_MS = 12_000;
-const TERRAIN_SAMPLE_TIMEOUT_MS = 15_000;
+const TERRAIN_METADATA_TIMEOUT_MS = 8_000;
+const TERRAIN_SAMPLE_TIMEOUT_MS = 6_000;
+// The global terrain is ~10-30 m resolution, so a fixed level-14 sample
+// (~10 m cells; one or two tile requests for a whole field) is as accurate as
+// sampleTerrainMostDetailed, which walked ~70 tile requests and could keep the
+// viewer waiting 15 s+ on a slow link.
+const TERRAIN_SAMPLE_LEVEL = 14;
 
 /** Everything this app builds (mesh, point cloud, splats) is placed with its
  * ground plane at height 0 in its own frame, and the survey's DTM heights
@@ -47,7 +52,7 @@ async function sampleGroundHeight(Cesium: any, terrainProvider: any, lon: number
   }
   if (terrainProvider instanceof Cesium.EllipsoidTerrainProvider) return 0;
   const sampled = await withTimeout<any[] | null>(
-    Cesium.sampleTerrainMostDetailed(terrainProvider, pts),
+    Cesium.sampleTerrain(terrainProvider, TERRAIN_SAMPLE_LEVEL, pts),
     TERRAIN_SAMPLE_TIMEOUT_MS,
     null
   );
@@ -286,6 +291,7 @@ export default function CesiumViewer({
         viewer={viewer}
         Cesium={Cesium}
         ready={ready}
+        cameraReady={cesiumCtx !== null}
         boundary={boundary}
         centerLat={centerLat}
         centerLon={centerLon}
