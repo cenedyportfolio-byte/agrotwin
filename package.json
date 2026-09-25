@@ -1,0 +1,10 @@
+{
+  "name": "agrotwin",
+  "private": true,
+  "description": "One-command launcher for the AgroTwin backend + frontend (see run.ps1). The apps keep their own package.json in frontend/ and mobile/.",
+  "scripts": {
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File run.ps1 dev",
+    "start:lan": "powershell -NoProfile -ExecutionPolicy Bypass -File run.ps1 dev -Lan",
+    "stop": "powershell -NoProfile -ExecutionPolicy Bypass -File run.ps1 stop"
+  }
+}

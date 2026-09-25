@@ -18,12 +18,17 @@ scripts/    (in backend/scripts) photogrammetry, splat training, tiling, ingesti
 
 ## Run it
 
-Windows:
+Windows, from this folder:
 
 ```powershell
-.\run.ps1          # production: builds the frontend once, then serves it
-.\run.ps1 dev      # hot-reloading dev servers
+npm start          # backend + frontend (dev servers); Ctrl-C stops both
+npm run start:lan  # same, reachable from phones on the LAN (mobile app)
+npm run stop       # stops them, even if started from another window
 ```
+
+`npm start` says so and exits if AgroTwin is already running. These call
+`run.ps1`, which also runs directly: `.\run.ps1 dev`, or `.\run.ps1` for a
+production build served once built.
 
 Linux / macOS:
 
