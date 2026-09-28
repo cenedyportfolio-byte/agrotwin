@@ -13,6 +13,7 @@ import { DetectionPanel } from "@/components/cesium/DetectionPanel";
 import { MethodBadge, MockDataBadge } from "@/components/dashboard/StatusPill";
 import { groupFrames } from "@/lib/frames";
 import { selectViewerAssets } from "@/lib/surveyAssets";
+import { isWeedZone } from "@/lib/types";
 import type { CursorPosition } from "@/components/cesium/CesiumViewer";
 import type { SplatStatus } from "@/components/cesium/SplatLayer";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -173,6 +174,7 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         ndre={viewerAssets.ndre}
         gndvi={viewerAssets.gndvi}
         dsm={viewerAssets.dsm}
+        vegetationMask={viewerAssets.vegetationMask}
         meshUrl={viewerAssets.meshUrl}
         meshKind={viewerAssets.meshKind}
         pointCloudUrl={viewerAssets.pointCloudUrl}
@@ -233,6 +235,9 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
           meshKind={viewerAssets.meshKind}
           hasPointCloud={!!viewerAssets.pointCloudUrl}
           hasVectorOverlays={viewerAssets.vectorOverlays.length > 0}
+          hasVegetationMask={!!viewerAssets.vegetationMask}
+          hasWeedAreas={detections.some((d) => isWeedZone(d.type))}
+          weedHint={analysis?.metrics?.rows?.reason}
         />
       </div>
 

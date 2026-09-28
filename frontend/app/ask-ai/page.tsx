@@ -4,14 +4,17 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
-import { Bot, Send, Loader2 } from "lucide-react";
+import { Markdown } from "@/lib/markdown";
+import { Bot, Send, Loader2, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { KnowledgeSource } from "@/lib/types";
 
 const SUGGESTIONS = [
   "How is my field doing?",
   "Show problem areas",
-  "Where should I inspect?",
+  "Where are the weeds?",
+  "What should I check when scouting a thin area?",
   "What changed since the last survey?",
 ];
 
@@ -29,11 +32,12 @@ export default function AskAiPage() {
   const surveyId = field?.latest_survey_id ?? null;
 
   const [question, setQuestion] = useState("");
-  const [history, setHistory] = useState<{ q: string; a: string; responder: string }[]>([]);
+  const [history, setHistory] = useState<{ q: string; a: string; responder: string; sources: KnowledgeSource[] }[]>([]);
 
   const ask = useMutation({
     mutationFn: (q: string) => api.askAssistant(surveyId as string, q),
-    onSuccess: (res) => setHistory((h) => [...h, { q: res.question, a: res.answer, responder: res.responder }]),
+    onSuccess: (res) =>
+      setHistory((h) => [...h, { q: res.question, a: res.answer, responder: res.responder, sources: res.sources ?? [] }]),
   });
 
   function send(q: string) {
@@ -53,9 +57,10 @@ export default function AskAiPage() {
             <h1 className="text-xl sm:text-2xl font-semibold">Ask AI</h1>
           </div>
           <p className="text-muted-foreground mt-2 text-xs sm:text-sm">
-            Answers are grounded in the field&apos;s measured analysis — the assistant explains the numbers, it never
-            invents findings. A local Ollama model is used for the wording when one is running; otherwise the answer is
-            built directly from the measurements and says so.
+            Answers are grounded in the field&apos;s measured analysis plus a local agronomy knowledge base (growth
+            stages, indices, scouting, weeds, survey practice) — the assistant explains the numbers and cites its sources,
+            it never invents findings. A local Ollama model is used for the wording when one is running; otherwise the
+            answer is built directly from the measurements and says so.
           </p>
         </div>
 
@@ -92,7 +97,19 @@ export default function AskAiPage() {
                     {h.q}
                   </div>
                   <div className="mr-auto max-w-[85%] w-fit rounded-lg rounded-bl-sm border border-border bg-surface px-3 py-2 text-sm">
-                    <div className="whitespace-pre-line">{h.a}</div>
+                    <Markdown text={h.a} />
+                    {h.sources.length > 0 && (
+                      <div className="mt-2 border-t border-border pt-1.5 text-[11px] text-muted-foreground space-y-0.5">
+                        <div className="flex items-center gap-1 font-medium">
+                          <BookOpen size={11} /> Sources (local knowledge base)
+                        </div>
+                        {h.sources.map((s, j) => (
+                          <div key={j} title={s.snippet}>
+                            {s.title} — {s.section}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="mt-1.5 text-[10px] text-muted-foreground">{responderLabel(h.responder)}</div>
                   </div>
                 </div>

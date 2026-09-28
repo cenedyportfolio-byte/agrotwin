@@ -18,12 +18,17 @@ scripts/    (in backend/scripts) photogrammetry, splat training, tiling, ingesti
 
 ## Run it
 
-Windows:
+Windows, from this folder:
 
 ```powershell
-.\run.ps1          # production: builds the frontend once, then serves it
-.\run.ps1 dev      # hot-reloading dev servers
+npm start          # backend + frontend (dev servers); Ctrl-C stops both
+npm run start:lan  # same, reachable from phones on the LAN (mobile app)
+npm run stop       # stops them, even if started from another window
 ```
+
+`npm start` says so and exits if AgroTwin is already running. These call
+`run.ps1`, which also runs directly: `.\run.ps1 dev`, or `.\run.ps1` for a
+production build served once built.
 
 Linux / macOS:
 
@@ -103,10 +108,55 @@ Zones are merged from the flagged cells and labelled only by what was
 measured — bare soil, low crop density, patchy vegetation. The method is
 recorded on every result and shown in the UI.
 
+On top of the tiers, the orthomosaic is analysed for **crop rows and canopy
+closure** (row spacing, bearing, share of the inter-row ground covered by
+leaves). While the canopy is open enough for rows to be separable, vegetation
+growing between rows is flagged as **weed candidates** for scouting; once the
+canopy has closed the app says so instead of guessing. A **vegetation mask**
+layer shows exactly which pixels were counted.
+
 It is classical computer vision on real imagery, **not** a trained model:
 it cannot identify weed species, disease or pests, and it never recommends
-pesticides. See `docs/PHASE_STATUS.md` for the full list of what is real,
-what is approximate, and what is still open.
+pesticides. Trained detectors plug in as manifests under `data/models/`
+(Ultralytics YOLO/YOLO-seg, installed in `.venv-gpu`; see Settings) — none
+ships, because that needs labelled imagery of this crop. To add one:
+
+```
+data/models/soy-weeds-v1/
+    manifest.json   {"name": "soy-weeds-v1", "task": "weed_detection",
+                     "framework": "ultralytics", "weights": "best.pt",
+                     "labels": ["waterhemp", "palmer_amaranth"],
+                     "trained_on": "…", "input_gsd_m": 0.02}
+    best.pt
+```
+
+It runs on the orthomosaic during the next analysis (tiled at its own GSD,
+results georeferenced and typed `soy-weeds-v1:waterhemp`). See
+`docs/PHASE_STATUS.md` for the full list of what is real, what is
+approximate, and what is still open.
+
+## Assistant and knowledge base
+
+`/ask-ai` answers from the survey's measured numbers plus a local agronomy
+knowledge base (`backend/app/knowledge/*.md`: growth stages, indices,
+scouting, weeds, survey practice, stress symptoms) retrieved with BM25 —
+fully offline, no embedding model. A local Ollama model
+(`qwen2.5:14b-instruct-q4_K_M`, see `docs/DEV_NOTES.md`) writes the answer
+when one is running; otherwise a template responder does, and every answer
+says which and lists its sources (web and mobile). Add or edit a Markdown
+file to extend it — the index rebuilds on the next question, no restart.
+
+## Map sources and licensing
+
+The Cesium viewer's basemap defaults to **open data**: USGS "Imagery Only"
+(USDA NAIP aerial photography, public domain) over the United States, with
+EOX Sentinel-2 cloudless (CC BY 4.0) as the per-tile fallback everywhere
+else. Esri World Imagery is available as an opt-in (`NEXT_PUBLIC_BASEMAP=esri`)
+but its terms require an ArcGIS licence for sustained or commercial use, so it
+is off by default. The global 3D terrain is Esri World Elevation 3D
+(`NEXT_PUBLIC_TERRAIN=ellipsoid` disables it; the survey's own reconstructed
+terrain still renders). Your own products — orthomosaic, indices, 3D
+models, splats — are always served locally. Settings shows what is active.
 
 ## Heavy pipelines (GPU, run from `backend/`)
 

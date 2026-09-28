@@ -27,11 +27,13 @@ export interface SurveyImageryLayerProps {
   ndre: RasterAsset | null;
   gndvi: RasterAsset | null;
   dsm: RasterAsset | null;
+  vegetationMask?: RasterAsset | null;
   showOrthomosaic: boolean;
   showNdvi: boolean;
   showNdre: boolean;
   showGndvi: boolean;
   showDsm: boolean;
+  showVegetationMask?: boolean;
 }
 
 async function providerFor(Cesium: any, asset: RasterAsset): Promise<any> {
@@ -113,16 +115,19 @@ export function SurveyImageryLayer({
   ndre,
   gndvi,
   dsm,
+  vegetationMask = null,
   showOrthomosaic,
   showNdvi,
   showNdre,
   showGndvi,
   showDsm,
+  showVegetationMask = false,
 }: SurveyImageryLayerProps) {
   useRasterLayer(viewer, Cesium, ready, tileset, orthomosaic, showOrthomosaic);
   useRasterLayer(viewer, Cesium, ready, tileset, ndvi, showNdvi);
   useRasterLayer(viewer, Cesium, ready, tileset, ndre, showNdre);
   useRasterLayer(viewer, Cesium, ready, tileset, gndvi, showGndvi);
   useRasterLayer(viewer, Cesium, ready, tileset, dsm, showDsm);
+  useRasterLayer(viewer, Cesium, ready, tileset, vegetationMask, showVegetationMask);
   return null;
 }

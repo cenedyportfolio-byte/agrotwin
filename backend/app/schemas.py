@@ -132,6 +132,23 @@ class AnalysisResultOut(BaseModel):
     method: str  # ndvi_map | exg_map | ndvi | exg — see analysis_service
     is_mock: bool
     detections: list[DetectionZoneOut]
+    # row geometry / canopy closure / weed-candidate status / detectors — see weed_service, detector_service
+    metrics: dict[str, Any] = {}
+
+
+class KnowledgeSource(BaseModel):
+    title: str
+    section: str
+    snippet: str
+    score: float
+
+
+class AskResponseOut(BaseModel):
+    question: str
+    answer: str
+    responder: str
+    sources: list[KnowledgeSource] = []
+    context_used: dict[str, Any]
 
 
 class ProcessingJobOut(BaseModel):

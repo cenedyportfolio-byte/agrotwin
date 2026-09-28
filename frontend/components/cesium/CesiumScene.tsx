@@ -10,6 +10,10 @@ export interface CesiumSceneProps {
   viewer: any;
   Cesium: any;
   ready: boolean;
+  /** The viewer exists. The camera flies to the field from this moment, with a
+   * provisional altitude until the ground height is known (`ready`), so a slow
+   * terrain service never leaves the user looking at the whole globe. */
+  cameraReady?: boolean;
   boundary: GeoJSON.Geometry | null;
   centerLat: number | null;
   centerLon: number | null;
@@ -28,10 +32,13 @@ export interface CesiumSceneProps {
  * survey image capture points, and mode-driven camera placement. Detection
  * zones and raster overlays are separate layers (DetectionLayer,
  * SurveyImageryLayer) so each concern can evolve independently. */
+const PROVISIONAL_GROUND_M = 600;
+
 export function CesiumScene({
   viewer,
   Cesium,
   ready,
+  cameraReady = ready,
   boundary,
   centerLat,
   centerLon,
@@ -43,6 +50,11 @@ export function CesiumScene({
   initialCamera = null,
   groundHeight = 0,
 }: CesiumSceneProps) {
+  // Until the terrain under the field has been sampled, fly as if the ground
+  // could be up to PROVISIONAL_GROUND_M high: the camera lands above the field
+  // for nearly all farmland, then the mode effect below re-flies to the exact
+  // height (it depends on groundHeight) a moment later.
+  const base = ready ? groundHeight : PROVISIONAL_GROUND_M;
   useEffect(() => {
     if (!viewer || !Cesium || !ready || viewer.isDestroyed()) return;
 
@@ -77,18 +89,11 @@ export function CesiumScene({
   }, [viewer, Cesium, ready, boundary, showFieldBoundary, mode, groundHeight]);
 
   useEffect(() => {
-    if (!viewer || !Cesium || !ready || viewer.isDestroyed() || centerLat == null || centerLon == null || initialCamera) return;
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, groundHeight + 350),
-      duration: 1.5,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewer, Cesium, ready, centerLat, centerLon]);
-
-  useEffect(() => {
-    if (!viewer || !Cesium || !ready || viewer.isDestroyed() || centerLat == null || centerLon == null) return;
+    if (!viewer || !Cesium || !cameraReady || viewer.isDestroyed() || centerLat == null || centerLon == null) return;
 
     if (initialCamera) {
+      // a shared exact view needs the exact ground height
+      if (!ready) return;
       viewer.camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(initialCamera.lon, initialCamera.lat, groundHeight + initialCamera.height),
         orientation: {
@@ -103,7 +108,7 @@ export function CesiumScene({
       // ~300 m south of the centre at 350 m, looking down 50°: the whole
       // field fills the view with some perspective on the terrain mesh
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.0027, groundHeight + 350),
+        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.0027, base + 350),
         orientation: { heading: 0, pitch: Cesium.Math.toRadians(-50), roll: 0 },
         duration: 1.2,
       });
@@ -111,19 +116,19 @@ export function CesiumScene({
       // steep view from the south edge: nadir-only captures reconstruct the
       // ground well but look "needly" at grazing angles
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.0009, groundHeight + 330),
+        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.0009, base + 330),
         orientation: { heading: 0, pitch: Cesium.Math.toRadians(-70), roll: 0 },
         duration: 1.2,
       });
     } else if (mode === "field-map") {
       viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, groundHeight + 350),
+        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, base + 350),
         orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
         duration: 1.2,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewer, Cesium, mode, ready, centerLat, centerLon, initialCamera, groundHeight]);
+  }, [viewer, Cesium, mode, cameraReady, ready, centerLat, centerLon, initialCamera, groundHeight]);
 
   useEffect(() => {
     if (!viewer || !Cesium || !ready || viewer.isDestroyed()) return;
@@ -146,19 +151,25 @@ export function CesiumScene({
         pixelSize = 8;
       }
 
+      // Placed at the field's sampled ground height rather than clamped to
+      // the terrain: CLAMP_TO_GROUND re-picks every point's height against
+      // each terrain tile that loads during the camera's descent, which for a
+      // 1,378-frame survey froze the page for over a minute (profiled
+      // 2026-09-24). A field is flat at this scale, and the globe's depth
+      // test is off, so the points still sit on the surface.
       viewer.entities.add({
         id,
-        position: Cesium.Cartesian3.fromDegrees(img.lon, img.lat, 0),
+        position: Cesium.Cartesian3.fromDegrees(img.lon, img.lat, groundHeight + 1),
         point: {
           pixelSize,
           color,
           outlineColor: Cesium.Color.fromCssColorString("#16a34a"),
           outlineWidth: 1,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       });
     }
-  }, [viewer, Cesium, ready, images, showRgbPoints, showCropDensity]);
+  }, [viewer, Cesium, ready, images, showRgbPoints, showCropDensity, groundHeight]);
 
   return null;
 }

@@ -201,6 +201,8 @@ class AnalysisResult(Base):
     # ndvi_map | exg_map (5 m cells on a georeferenced mosaic) or ndvi | exg (one sample per frame)
     method: Mapped[str] = mapped_column(String, default="exg")
     is_mock: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Extra measured metrics (row geometry, canopy closure, weed-candidate status, detectors run) — see weed_service
+    metrics_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     survey: Mapped[Survey] = relationship(back_populates="analysis_results")

@@ -1,6 +1,12 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+# GDAL (de)compresses GeoTIFF blocks on every core instead of one: a full
+# read of a survey orthomosaic drops from ~1.0 s to ~0.12 s. Lossless, so
+# the pixels are identical. Set here because every entry point imports config.
+os.environ.setdefault("GDAL_NUM_THREADS", "ALL_CPUS")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 AGROTWIN_ROOT = BACKEND_DIR.parent
@@ -53,10 +59,16 @@ class Settings(BaseSettings):
         "http://bayazid.cenedypalma.com",
     ]
 
-    # Local / Offline LLM via Ollama
-    ollama_base_url: str = "http://127.0.0.1:11435"
-    ollama_model: str = "llama3.2:3b"
-    ollama_timeout_s: float = 60.0
+    # Local / Offline LLM via Ollama. Model chosen for this machine's specs
+    # (RTX 4060 Ti 16GB VRAM, 32GB RAM, i5-13600K): qwen2.5:14b-instruct-q4_K_M
+    # fits comfortably in VRAM (~9GB) with headroom for a concurrent GPU job,
+    # and Qwen2.5 stays noticeably more faithful to the retrieved knowledge-base
+    # passages / structured field JSON than smaller models — see docs/DEV_NOTES.md.
+    # Ollama's own default port is 11434 (not 11435 — a prior mismatch here
+    # meant the assistant could never reach Ollama even once installed).
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:14b-instruct-q4_K_M"
+    ollama_timeout_s: float = 90.0
 
     class Config:
         env_prefix = "AGROTWIN_"

@@ -13,12 +13,15 @@ function LayerToggle({
   label,
   disabled,
   hint,
+  badge,
 }: {
   checked: boolean;
   onChange: () => void;
   label: string;
   disabled?: boolean;
   hint?: string;
+  /** Small text at the right instead of "n/a" (e.g. why a layer is unavailable). */
+  badge?: string;
 }) {
   return (
     <label
@@ -31,7 +34,7 @@ function LayerToggle({
         <Checkbox checked={checked && !disabled} disabled={disabled} onCheckedChange={() => onChange()} />
         {label}
       </span>
-      {disabled && <span className="text-[10px] text-muted-foreground/60">n/a</span>}
+      {disabled && <span className="text-[10px] text-muted-foreground/60">{badge ?? "n/a"}</span>}
     </label>
   );
 }
@@ -47,6 +50,11 @@ export interface LayerControlsProps {
   meshKind?: MeshKind;
   hasPointCloud?: boolean;
   hasVectorOverlays?: boolean;
+  hasVegetationMask?: boolean;
+  /** Weed candidates / model detections exist for this survey. */
+  hasWeedAreas?: boolean;
+  /** Why weed candidates are absent (backend row-analysis status), shown as the toggle's hint. */
+  weedHint?: string;
 }
 
 export function LayerControls({
@@ -59,6 +67,9 @@ export function LayerControls({
   meshKind = "terrain",
   hasPointCloud,
   hasVectorOverlays,
+  hasVegetationMask,
+  hasWeedAreas,
+  weedHint,
 }: LayerControlsProps) {
   const [open, setOpen] = useState(true);
 
@@ -74,6 +85,7 @@ export function LayerControls({
     showRgbPoints,
     showFieldBoundary,
     showProblemZones,
+    showWeedAreas,
     showOrthomosaic,
     showNdvi,
     showNdre,
@@ -83,6 +95,7 @@ export function LayerControls({
     showMesh,
     showPointCloud,
     showVectorOverlays,
+    showVegetationMask,
     mode,
     toggleLayer,
   } = useDigitalTwinStore();
@@ -140,6 +153,17 @@ export function LayerControls({
             onChange={() => toggleLayer("problemZones")}
             label={advanced ? "Detection Zones" : "Needs Attention"}
           />
+          <LayerToggle
+            checked={showWeedAreas}
+            onChange={() => toggleLayer("weedAreas")}
+            label={advanced ? "Weed candidates (inter-row)" : "Weed Areas"}
+            disabled={!hasWeedAreas}
+            badge={hasWeedAreas ? undefined : "none"}
+            hint={
+              weedHint ??
+              "Vegetation growing between the crop rows, flagged for scouting while the canopy is still open; species are not identified"
+            }
+          />
           {hasVectorOverlays && (
             <LayerToggle
               checked={showVectorOverlays}
@@ -163,6 +187,13 @@ export function LayerControls({
           {advanced && (
             <>
               <div className="my-2 border-t border-border" />
+              <LayerToggle
+                checked={showVegetationMask}
+                onChange={() => toggleLayer("vegetationMask")}
+                label="Vegetation mask"
+                disabled={!hasVegetationMask}
+                hint="Exactly the pixels the analysis counted as vegetation (Excess Green above threshold), at 5 cm"
+              />
               <LayerToggle
                 checked={showNdre}
                 onChange={() => toggleLayer("ndre")}

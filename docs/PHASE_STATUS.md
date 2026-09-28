@@ -25,7 +25,9 @@ Roadmap phases per the original spec, and what's actually done.
       (a) manual import of any GeoTIFF; (b) **quick mosaics built from the
       survey's own frames** (`mosaic_service.py`, direct georeferencing from
       RTK positions, gimbal yaw, AGL altitude, calibrated intrinsics and DJI
-      DewarpData; GPU warp path with numpy fallback); (c) OpenDroneMap
+      DewarpData; undistort, warp and blend on the GPU into a canvas kept in
+      VRAM, numpy fallback; 1,378 frames in ~93 s, tile pyramid in ~7 s —
+      stage map in docs/DEV_NOTES.md); (c) OpenDroneMap
       orthophotos via `scripts/import_odm.py`. Documented limits of (b):
       flat-ground assumption, AGL relative to takeoff, no colour balancing,
       no bundle adjustment — a "2D quick map", not photogrammetry.
@@ -45,15 +47,42 @@ Roadmap phases per the original spec, and what's actually done.
       problem — so a uniform field reads healthy and the shares are
       measured, not fixed by construction. Zones carry type (bare soil / low
       density / patchy), severity, confidence and a safe action. `is_mock`
-      is `false` everywhere. Still NOT a trained model: cannot identify weed
-      species or disease — a YOLO/SAM detector remains the upgrade path and
-      needs labeled data this project doesn't have.
+      is `false` everywhere. **Weed architecture** (`weed_service.py`,
+      2026-09-18): crop rows are located on the orthomosaic (row spacing,
+      compass bearing, per-band row lock) and canopy closure is measured as
+      the vegetation cover between rows; vegetation growing between rows is
+      emitted as `weed_candidate` zones for scouting ONLY while the canopy is
+      open enough for rows to be separable (mid-row cover ≤ 35 %). On the
+      40 ft survey: rows 0.40 m apart at bearing 38.5° (row signal 0.83),
+      canopy covers 84 % of the ground between rows on the 48 % of the field
+      where rows could be followed → status `canopy_closed`, no candidates —
+      the honest answer for a June flight; an early-season (V2–V4) flight is
+      what weed mapping needs. Verified on a synthetic field (0.5 m rows at
+      30°, one 28 m² patch → one candidate at the right place,
+      `tests/test_weed_service.py`). A `vegetation_mask` raster (exactly the
+      pixels counted as vegetation) is registered as a layer so the
+      measurement itself can be inspected. **Trained detectors**
+      (`detector_service.py`): a manifest-driven plug-in for Ultralytics
+      YOLO/YOLO-seg models under `data/models/<name>/`, run on the
+      orthomosaic in georeferenced tiles, results typed `<model>:<label>`;
+      none is installed, and the UI says so, because weed species / disease
+      identification needs labelled imagery of this crop that does not exist
+      yet.
 - [x] Phase 8 — Assistant: `llm_service.py` assembles structured field
       context (numbers, method, tier rule, previous survey) and answers via a
       local Ollama model when one is reachable, else via templates over the
       same real numbers. The API and UI report which responder answered, so
-      the app never implies a model that isn't running. RAG is deliberately
-      not built yet.
+      the app never implies a model that isn't running. **RAG (first
+      milestone, 2026-09-18)**: `rag_service.py` retrieves passages (BM25,
+      no embedding model, fully offline) from a plain-Markdown knowledge base
+      in `backend/app/knowledge/` — soybean growth stages and canopy
+      closure, vegetation indices, how to read AgroTwin's tiers, scouting
+      flagged zones, common soybean weeds, drone survey practice, stress
+      symptoms seen from above, row geometry. Matching passages go to the
+      LLM as reference notes and are appended to template answers; every
+      answer returns its `sources`, shown in the UI. The assistant also
+      answers row/canopy/weed questions from the measured metrics. General
+      agronomy only — no product or treatment recommendations.
 - [x] Phase 9 — Photorealistic (Gaussian splats) and dense 3D from the
       survey's frames: `scripts/build_splats.py` (CUDA COLMAP SfM with
       spatial pairing, Sim3 geo-alignment to the RTK camera positions,
@@ -112,9 +141,28 @@ Roadmap phases per the original spec, and what's actually done.
 
 ## Still open (honest gaps, not hidden)
 
-- No PyTorch/YOLO/SAM inference — the analysis is classical CV on calibrated
-  vegetation indices, not a trained deep-learning model. A real weed/disease
-  detector needs labeled training data this project doesn't have.
+- No trained weed/disease/pest model is installed — the detector plug-in and
+  the tiled inference runner exist, but a model needs labelled imagery of
+  this crop, which this project doesn't have. Until then the analysis is
+  classical CV (vegetation indices + crop-row geometry), labelled as such.
+  The path itself is proven (2026-09-20): `ultralytics` 8.4 is installed in
+  `.venv-gpu` (`requirements-gpu.txt`), and a throwaway COCO `yolov8n-seg`
+  manifest was discovered, reported `ready`, and run over the whole 2 cm
+  orthomosaic in 16.7 s on the GPU, returning georeferenced polygons inside
+  the field — then deleted, because a generic model "detecting persons" in a
+  soybean field is exactly the fake finding the app refuses to show. Drop a
+  real model under `data/models/<name>/` and it runs on the next analysis.
+- 3DGS quality is only checked by a single training-view L1 (0.071); there is
+  no held-out PSNR/SSIM/LPIPS split (`docs/TECHNICAL_AUDIT_2026-09-20.md`
+  §1.3). Adding a ~5 % held-out set to `gsplat_train.py` is the next step
+  for a defensible number.
+- Inter-row weed candidates need an open canopy; the only survey on this
+  machine (June, 40 ft) has 84 % canopy closure, so none can be measured.
+- Basemap: the default is now open data (USGS/NAIP over the US, Sentinel-2
+  elsewhere). The 3D terrain still defaults to Esri World Elevation 3D
+  because there is no token-free open global terrain service Cesium can
+  stream; `NEXT_PUBLIC_TERRAIN=ellipsoid` removes that dependency (the
+  survey's own reconstructed terrain is unaffected).
 - The generated 3D products are placed with their ground on the sampled
   global terrain (~10–30 m resolution), and the built-in mesh is a 2.5D
   heightfield — it cannot represent overhangs (tree canopies become spikes).

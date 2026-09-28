@@ -1,6 +1,7 @@
 import type {
   AnalysisResult,
   AskResponse,
+  DetectorStatus,
   FieldBoundaryResponse,
   FieldOut,
   FieldSummary,
@@ -97,6 +98,8 @@ export const api = {
   getAnalysis: (surveyId: string) => request<AnalysisResult>(`/api/analysis/${surveyId}`),
   askAssistant: (surveyId: string, question: string) =>
     postJson<AskResponse>(`/api/analysis/${surveyId}/ask`, { question }),
+  getDetectors: () => request<DetectorStatus>("/api/analysis/detectors"),
+  getKnowledgeTopics: () => request<{ topics: { title: string; sections: string[] }[] }>("/api/analysis/knowledge"),
 
   imageThumbnailUrl: (surveyId: string, imageId: string) =>
     `/api/surveys/${surveyId}/images/${imageId}/thumbnail`,

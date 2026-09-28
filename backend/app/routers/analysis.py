@@ -6,9 +6,24 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.services import job_runner, llm_service, processing_service
+from app.services import detector_service, job_runner, llm_service, processing_service, rag_service
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+
+
+@router.get("/detectors")
+def list_detectors():
+    """Trained detector models installed under data/models/ (none by default) —
+    what the app would use for weed/disease/pest identification."""
+    return detector_service.status()
+
+
+@router.get("/knowledge")
+def list_knowledge(q: str | None = None):
+    """The assistant's local knowledge base: topics, or the passages matching `q`."""
+    if q:
+        return {"query": q, "passages": [p.as_dict() for p in rag_service.search(q, k=5)]}
+    return {"topics": rag_service.topics()}
 
 
 @router.get("/{survey_id}", response_model=schemas.AnalysisResultOut)
@@ -43,6 +58,7 @@ def get_analysis(survey_id: str, db: Session = Depends(get_db)):
         method=result.method,
         is_mock=result.is_mock,
         detections=detections,
+        metrics=json.loads(result.metrics_json) if result.metrics_json else {},
     )
 
 
@@ -64,16 +80,18 @@ class AskRequest(BaseModel):
     question: str
 
 
-@router.post("/{survey_id}/ask")
+@router.post("/{survey_id}/ask", response_model=schemas.AskResponseOut)
 def ask_assistant(survey_id: str, payload: AskRequest, db: Session = Depends(get_db)):
-    """Farmer-friendly Q&A grounded in this survey's structured analysis. The
-    response names its responder: the local Ollama model when reachable, the
-    template responder otherwise (see llm_service)."""
+    """Farmer-friendly Q&A grounded in this survey's structured analysis plus
+    matching passages from the local knowledge base. The response names its
+    responder (local Ollama model or the template) and its sources."""
     survey = db.get(models.Survey, survey_id)
     if not survey:
         raise HTTPException(404, "Survey not found")
 
     result = max(survey.analysis_results, key=lambda r: r.created_at, default=None)
     context = llm_service.build_field_context(survey, survey.field, result)
-    answer, responder = llm_service.answer_question(payload.question, context)
-    return {"question": payload.question, "answer": answer, "responder": responder, "context_used": context}
+    answer, responder, sources = llm_service.answer_question(payload.question, context)
+    return schemas.AskResponseOut(
+        question=payload.question, answer=answer, responder=responder, sources=sources, context_used=context
+    )

@@ -3,6 +3,7 @@
 import type * as GeoJSON from "geojson";
 import { useEffect, useRef, useState } from "react";
 import { loadCesium } from "@/lib/loadCesium";
+import { createBasemapProvider, withTimeout } from "@/lib/basemap";
 import type { DetectionZone, SurveyImage } from "@/lib/types";
 import { useDigitalTwinStore } from "@/lib/digitalTwinStore";
 import { CesiumScene } from "./CesiumScene";
@@ -20,12 +21,22 @@ export interface CursorPosition {
   height: number | null;
 }
 
-// Token-free: Esri World Imagery (aerial) as the basemap and Esri Terrain3D
-// as global terrain. No Cesium Ion access token is used anywhere.
-const ESRI_IMAGERY_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+// Token-free: Esri World Imagery (aerial, with a Sentinel-2 fallback — see
+// lib/basemap.ts) as the basemap and Esri Terrain3D as global terrain. No
+// Cesium Ion access token is used anywhere. Nothing here may block on these
+// services: on a network that resets connections to Esri (seen here through
+// Cloudflare WARP) every remote call is time-limited and falls back locally.
 const ESRI_TERRAIN_URL =
   "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer";
+export const TERRAIN_PROVIDER: "esri" | "ellipsoid" =
+  process.env.NEXT_PUBLIC_TERRAIN === "ellipsoid" ? "ellipsoid" : "esri";
+const TERRAIN_METADATA_TIMEOUT_MS = 8_000;
+const TERRAIN_SAMPLE_TIMEOUT_MS = 6_000;
+// The global terrain is ~10-30 m resolution, so a fixed level-14 sample
+// (~10 m cells; one or two tile requests for a whole field) is as accurate as
+// sampleTerrainMostDetailed, which walked ~70 tile requests and could keep the
+// viewer waiting 15 s+ on a slow link.
+const TERRAIN_SAMPLE_LEVEL = 14;
 
 /** Everything this app builds (mesh, point cloud, splats) is placed with its
  * ground plane at height 0 in its own frame, and the survey's DTM heights
@@ -39,14 +50,18 @@ async function sampleGroundHeight(Cesium: any, terrainProvider: any, lon: number
   if (boundary?.type === "Polygon") {
     for (const [x, y] of (boundary as GeoJSON.Polygon).coordinates[0]) pts.push(Cesium.Cartographic.fromDegrees(x, y));
   }
-  try {
-    const sampled = await Cesium.sampleTerrainMostDetailed(terrainProvider, pts);
-    const hs = sampled.map((c: any) => c.height).filter((h: number) => Number.isFinite(h)).sort((a: number, b: number) => a - b);
-    return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
-  } catch (e) {
-    console.warn("terrain sampling failed, using ellipsoid height 0", e);
+  if (terrainProvider instanceof Cesium.EllipsoidTerrainProvider) return 0;
+  const sampled = await withTimeout<any[] | null>(
+    Cesium.sampleTerrain(terrainProvider, TERRAIN_SAMPLE_LEVEL, pts),
+    TERRAIN_SAMPLE_TIMEOUT_MS,
+    null
+  );
+  if (!sampled) {
+    console.warn("terrain sampling failed or timed out, using ellipsoid height 0");
     return 0;
   }
+  const hs = sampled.map((c: any) => c.height).filter((h: number) => Number.isFinite(h)).sort((a: number, b: number) => a - b);
+  return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
 }
 
 export interface CesiumViewerProps {
@@ -60,6 +75,7 @@ export interface CesiumViewerProps {
   ndre?: RasterAsset | null;
   gndvi?: RasterAsset | null;
   dsm?: RasterAsset | null;
+  vegetationMask?: RasterAsset | null;
   meshUrl?: string | null;
   /** "reality"/"imported": LOD-tiled tilesets (let Cesium pick LODs); "terrain": single-tile 2.5D fallback */
   meshKind?: MeshKind;
@@ -91,6 +107,7 @@ export default function CesiumViewer({
   ndre = null,
   gndvi = null,
   dsm = null,
+  vegetationMask = null,
   meshUrl = null,
   meshKind = "terrain",
   pointCloudUrl = null,
@@ -125,6 +142,8 @@ export default function CesiumViewer({
   const showMesh = useDigitalTwinStore((s) => s.showMesh);
   const showPointCloud = useDigitalTwinStore((s) => s.showPointCloud);
   const showVectorOverlays = useDigitalTwinStore((s) => s.showVectorOverlays);
+  const showWeedAreas = useDigitalTwinStore((s) => s.showWeedAreas);
+  const showVegetationMask = useDigitalTwinStore((s) => s.showVegetationMask);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,17 +154,20 @@ export default function CesiumViewer({
         const Cesium = await loadCesium();
         if (cancelled || !containerRef.current) return;
 
-        const imageryProvider = new Cesium.UrlTemplateImageryProvider({
-          url: ESRI_IMAGERY_URL,
-          credit: "Esri, Maxar, Earthstar Geographics",
-          maximumLevel: 19,
-        });
+        const imageryProvider = createBasemapProvider(Cesium);
 
-        let terrainProvider: any;
-        try {
-          terrainProvider = await Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(ESRI_TERRAIN_URL);
-        } catch (e) {
-          console.warn("global terrain unavailable, falling back to the ellipsoid", e);
+        // NEXT_PUBLIC_TERRAIN=ellipsoid removes the Esri dependency entirely
+        // (the survey's own reconstructed terrain mesh is unaffected).
+        let terrainProvider: any =
+          TERRAIN_PROVIDER === "esri"
+            ? await withTimeout(
+                Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(ESRI_TERRAIN_URL).catch(() => null),
+                TERRAIN_METADATA_TIMEOUT_MS,
+                null
+              )
+            : null;
+        if (!terrainProvider) {
+          if (TERRAIN_PROVIDER === "esri") console.warn("global terrain unavailable or too slow, falling back to the ellipsoid");
           terrainProvider = new Cesium.EllipsoidTerrainProvider();
         }
         if (cancelled || !containerRef.current) return;
@@ -248,9 +270,18 @@ export default function CesiumViewer({
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="cesium-viewer-full h-full w-full" />
-      {!ready && (
+      {/* The globe shows as soon as Cesium is up; the layers wait on the terrain
+          sample by themselves, so a slow terrain service never hides the map. */}
+      {!cesiumCtx && (
         <div className="absolute inset-0 flex items-center justify-center bg-surface text-sm text-muted-foreground">
           {status}
+        </div>
+      )}
+      {cesiumCtx && !ready && (
+        <div className="pointer-events-none absolute inset-x-0 top-14 sm:top-20 flex justify-center">
+          <div className="rounded-lg border border-border bg-surface/90 px-3 py-1.5 text-xs text-muted-foreground shadow backdrop-blur">
+            Placing survey layers on the terrain…
+          </div>
         </div>
       )}
 
@@ -260,6 +291,7 @@ export default function CesiumViewer({
         viewer={viewer}
         Cesium={Cesium}
         ready={ready}
+        cameraReady={cesiumCtx !== null}
         boundary={boundary}
         centerLat={centerLat}
         centerLon={centerLon}
@@ -280,11 +312,13 @@ export default function CesiumViewer({
         ndre={ndre}
         gndvi={gndvi}
         dsm={dsm}
+        vegetationMask={vegetationMask}
         showOrthomosaic={showOrthomosaic && !hideDrapes}
         showNdvi={showNdvi && !hideDrapes}
         showNdre={showNdre && !hideDrapes}
         showGndvi={showGndvi && !hideDrapes}
         showDsm={showDsm && !hideDrapes}
+        showVegetationMask={showVegetationMask && !hideDrapes}
       />
       <SurveyImageryLayer
         viewer={viewer}
@@ -338,6 +372,7 @@ export default function CesiumViewer({
         ready={ready}
         detections={detections}
         showProblemZones={showProblemZones}
+        showWeedAreas={showWeedAreas}
         drape={!photorealistic}
         groundHeight={groundH}
         onSelectDetection={onSelectDetection}

@@ -193,12 +193,22 @@ export interface FieldBoundaryResponse {
   area_hectares: number | null;
 }
 
+/** A knowledge-base passage the assistant drew on (backend rag_service). */
+export interface KnowledgeSource {
+  title: string;
+  section: string;
+  snippet: string;
+  score: number;
+}
+
 /** POST /api/analysis/{surveyId}/ask */
 export interface AskResponse {
   question: string;
   answer: string;
   /** "template" or "ollama:<model>" — which responder actually produced the answer. */
   responder: string;
+  /** Knowledge-base passages that matched the question, shown as citations. */
+  sources?: KnowledgeSource[];
   context_used: Record<string, unknown>;
 }
 

@@ -23,16 +23,21 @@ layer looks identical whichever provider the viewer picked.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import math
 import shutil
+import threading
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 from app.config import settings
+from app.services import gpu
 from app.services import orthomosaic_service as ortho
 
 log = logging.getLogger(__name__)
@@ -41,6 +46,8 @@ TILE = 256
 R = 6378137.0
 ORIGIN = -math.pi * R  # web-mercator extent is [-ORIGIN, ORIGIN]
 BLOCK_TILES = 8  # warp 8x8 tiles (2048 px) at a time
+PYRAMID_RAM_BYTES = 3_000_000_000  # deepest-level tiles kept in RAM (~11k); the rest are re-read from disk
+MAX_PENDING_TILES = 512  # tiles queued for encoding before the reader waits
 MIN_ZOOM = 14
 MAX_ZOOM_CAP = 24
 INDEX_LAYERS = {"ndvi", "ndre", "gndvi"}
@@ -115,13 +122,23 @@ def _colorize(bands: np.ndarray, alpha: np.ndarray, layer: str, stats) -> np.nda
     return rgba
 
 
-def _save_tile(rgba: np.ndarray, path: Path, ext: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _encode_tile(rgba: np.ndarray, ext: str) -> bytes:
+    buf = io.BytesIO()
     img = Image.fromarray(rgba, "RGBA")
     if ext == "webp":
-        img.save(path, "WEBP", quality=88, method=4)
+        img.save(buf, "WEBP", quality=88, method=4)
     else:
-        img.save(path, "PNG", optimize=True)
+        img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _save_tile(rgba: np.ndarray, path: Path, ext: str) -> None:
+    _write_tile_bytes(_encode_tile(rgba, ext), path)
+
+
+def _write_tile_bytes(data: bytes, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
 
 
 def _load_tile(path: Path) -> np.ndarray | None:
@@ -178,45 +195,100 @@ def build_xyz_tiles(src_path: Path, out_dir: Path, layer: str, max_zoom: int | N
                           resampling=Resampling.bilinear)
         if not has_alpha:
             vrt_kwargs["add_alpha"] = True
+        # Encoding (WebP/PNG) is CPU-only and dominated the build when it ran
+        # on one thread; Pillow releases the GIL, so a pool scales ~10x. The
+        # coarser levels are built from the tiles still in RAM, instead of
+        # re-reading (and re-decoding lossy WebP of) the ones just written.
+        pool = ThreadPoolExecutor(gpu.default_workers(), thread_name_prefix="agrotwin-tiles")
+        pending: deque = deque()
         written = 0
-        with WarpedVRT(src, **vrt_kwargs) as vrt:
-            for by in range(0, y1 - y0 + 1, BLOCK_TILES):
-                for bx in range(0, x1 - x0 + 1, BLOCK_TILES):
-                    nty = min(BLOCK_TILES, y1 - y0 + 1 - by)
-                    ntx = min(BLOCK_TILES, x1 - x0 + 1 - bx)
-                    win = Window(bx * TILE, by * TILE, ntx * TILE, nty * TILE)
-                    block = vrt.read(window=win).astype(np.float32)
-                    alpha = np.clip(block[-1], 0, 255).astype(np.uint8)
-                    if not alpha.any():
+
+        def save(tile: np.ndarray, z: int, key: tuple[int, int]) -> None:
+            nonlocal written
+            pending.append(pool.submit(_save_tile, tile, out_dir / str(z) / str(key[0]) / f"{key[1]}.{ext}", ext))
+            written += 1
+            while len(pending) > MAX_PENDING_TILES:  # backpressure keeps RAM bounded
+                pending.popleft().result()
+
+        def make_parent(children: dict, z: int, key: tuple[int, int]) -> np.ndarray:
+            x, y = key
+            parent = np.zeros((2 * TILE, 2 * TILE, 4), np.uint8)
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    ck = (2 * x + dx, 2 * y + dy)
+                    if ck not in children:
                         continue
-                    rgba = _colorize(block[:data_bands], alpha, layer, stats)
+                    child = children[ck]
+                    if child is None:  # spilled past the RAM budget
+                        child = _load_tile(out_dir / str(z + 1) / str(ck[0]) / f"{ck[1]}.{ext}")
+                    parent[dy * TILE:(dy + 1) * TILE, dx * TILE:(dx + 1) * TILE] = child
+            return _downsample(parent)
+
+        try:
+            # None = past PYRAMID_RAM_BYTES: that tile is read back from disk
+            level: dict[tuple[int, int], np.ndarray | None] = {}
+            kept = 0
+            # Blocks are warped + colourised on worker threads too (GDAL and
+            # numpy release the GIL); a GDAL handle is not thread-safe, so
+            # each worker opens its own.
+            local = threading.local()
+            handles: list = []
+            handles_lock = threading.Lock()
+
+            def warp_block(b: tuple[int, int, int, int]) -> np.ndarray | None:
+                by, bx, nty, ntx = b
+                if not hasattr(local, "vrt"):
+                    h = rasterio.open(src_path)
+                    local.vrt = WarpedVRT(h, **vrt_kwargs)
+                    with handles_lock:
+                        handles.append((local.vrt, h))
+                win = Window(bx * TILE, by * TILE, ntx * TILE, nty * TILE)
+                block = local.vrt.read(window=win).astype(np.float32)
+                alpha = np.clip(block[-1], 0, 255).astype(np.uint8)
+                if not alpha.any():
+                    return None
+                return _colorize(block[:data_bands], alpha, layer, stats)
+
+            n_rows, n_cols = y1 - y0 + 1, x1 - x0 + 1
+            blocks = [(by, bx, min(BLOCK_TILES, n_rows - by), min(BLOCK_TILES, n_cols - bx))
+                      for by in range(0, n_rows, BLOCK_TILES) for bx in range(0, n_cols, BLOCK_TILES)]
+            try:
+                for i, ((by, bx, nty, ntx), rgba) in enumerate(gpu.prefetch(blocks, warp_block), 1):
+                    if i % 16 == 0 or i == len(blocks):
+                        log.info("tiles %s: z%d block %d/%d", layer, zmax, i, len(blocks))
+                    if rgba is None:
+                        continue
                     for ty in range(nty):
                         for tx in range(ntx):
-                            tile = rgba[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE]
+                            tile = rgba[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE].copy()
                             if not tile[..., 3].any():
                                 continue
-                            _save_tile(tile, out_dir / str(zmax) / str(x0 + tx + bx) / f"{y0 + ty + by}.{ext}", ext)
-                            written += 1
-                log.info("tiles %s: z%d row block %d/%d", layer, zmax, by // BLOCK_TILES + 1,
-                         math.ceil((y1 - y0 + 1) / BLOCK_TILES))
+                            key = (x0 + tx + bx, y0 + ty + by)
+                            save(tile, zmax, key)
+                            if kept + tile.nbytes <= PYRAMID_RAM_BYTES:
+                                level[key] = tile
+                                kept += tile.nbytes
+                            else:
+                                level[key] = None
+            finally:
+                for vrt, h in handles:
+                    vrt.close()
+                    h.close()
 
-    # coarser levels from the children
-    for z in range(zmax - 1, zmin - 1, -1):
-        cx0, cy0 = lonlat_to_tile(west, north, z)
-        cx1, cy1 = lonlat_to_tile(east, south, z)
-        for x in range(cx0, cx1 + 1):
-            for y in range(cy0, cy1 + 1):
-                parent = np.zeros((2 * TILE, 2 * TILE, 4), np.uint8)
-                any_child = False
-                for dy in (0, 1):
-                    for dx in (0, 1):
-                        child = _load_tile(out_dir / str(z + 1) / str(2 * x + dx) / f"{2 * y + dy}.{ext}")
-                        if child is not None:
-                            parent[dy * TILE:(dy + 1) * TILE, dx * TILE:(dx + 1) * TILE] = child
-                            any_child = True
-                if any_child:
-                    _save_tile(_downsample(parent), out_dir / str(z) / str(x) / f"{y}.{ext}", ext)
-                    written += 1
+            # coarser levels, bottom-up; each is a quarter of the one below
+            for z in range(zmax - 1, zmin - 1, -1):
+                if any(v is None for v in level.values()):
+                    while pending:  # spilled children must be on disk before they are read back
+                        pending.popleft().result()
+                keys = sorted({(cx // 2, cy // 2) for cx, cy in level})
+                children = level
+                level = dict(zip(keys, pool.map(lambda k: make_parent(children, z, k), keys)))
+                for key, tile in level.items():
+                    save(tile, z, key)
+            while pending:
+                pending.popleft().result()  # surfaces any encode/write error
+        finally:
+            pool.shutdown(cancel_futures=True)
 
     written += fill_blank_tiles(out_dir, west, south, east, north, zmin, zmax, ext)
 
@@ -239,8 +311,8 @@ def build_xyz_tiles(src_path: Path, out_dir: Path, layer: str, max_zoom: int | N
 def fill_blank_tiles(out_dir: Path, west, south, east, north, zmin: int, zmax: int, ext: str) -> int:
     """Writes a fully transparent tile at every in-bounds position that has
     no data, so the viewer never logs 404s for the raster's empty corners."""
-    blank = np.zeros((TILE, TILE, 4), np.uint8)
-    n = 0
+    blank = _encode_tile(np.zeros((TILE, TILE, 4), np.uint8), ext)  # encode once
+    missing = []
     for z in range(zmin, zmax + 1):
         x0, y0 = lonlat_to_tile(west, north, z)
         x1, y1 = lonlat_to_tile(east, south, z)
@@ -249,9 +321,10 @@ def fill_blank_tiles(out_dir: Path, west, south, east, north, zmin: int, zmax: i
             for y in range(max(y0 - 1, 0), min(y1 + 2, 2**z)):
                 path = out_dir / str(z) / str(x) / f"{y}.{ext}"
                 if not path.exists():
-                    _save_tile(blank, path, ext)
-                    n += 1
-    return n
+                    missing.append(path)
+    with ThreadPoolExecutor(gpu.default_workers(), thread_name_prefix="agrotwin-tiles") as pool:
+        list(pool.map(lambda path: _write_tile_bytes(blank, path), missing))
+    return len(missing)
 
 
 def public_tiles_dir(survey_id: str, layer: str) -> Path:

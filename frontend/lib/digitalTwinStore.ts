@@ -8,15 +8,33 @@ export type LayerKey =
   | "orthomosaic"
   | "ndvi"
   | "problemZones"
+  | "weedAreas"
   | "rgbPoints"
   | "cropDensity"
   | "ndre"
   | "gndvi"
   | "dsm"
   | "pointCloud"
-  | "vectorOverlays";
+  | "vectorOverlays"
+  | "vegetationMask";
 
-interface DigitalTwinState {
+type ShowKey =
+  | "showFieldBoundary"
+  | "showMesh"
+  | "showOrthomosaic"
+  | "showNdvi"
+  | "showProblemZones"
+  | "showWeedAreas"
+  | "showRgbPoints"
+  | "showCropDensity"
+  | "showNdre"
+  | "showGndvi"
+  | "showDsm"
+  | "showPointCloud"
+  | "showVectorOverlays"
+  | "showVegetationMask";
+
+interface DigitalTwinState extends Record<ShowKey, boolean> {
   mode: ViewMode;
   setMode: (mode: ViewMode) => void;
 
@@ -26,42 +44,16 @@ interface DigitalTwinState {
   selectedDetectionId: string | null;
   setSelectedDetectionId: (id: string | null) => void;
 
-  showFieldBoundary: boolean;
-  showMesh: boolean;
-  showOrthomosaic: boolean;
-  showNdvi: boolean;
-  showProblemZones: boolean;
-  showRgbPoints: boolean;
-  showCropDensity: boolean;
-  showNdre: boolean;
-  showGndvi: boolean;
-  showDsm: boolean;
-  showPointCloud: boolean;
-  showVectorOverlays: boolean;
-
   toggleLayer: (key: LayerKey) => void;
 }
 
-const LAYER_STATE_KEY: Record<
-  LayerKey,
-  | "showFieldBoundary"
-  | "showMesh"
-  | "showOrthomosaic"
-  | "showNdvi"
-  | "showProblemZones"
-  | "showRgbPoints"
-  | "showCropDensity"
-  | "showNdre"
-  | "showGndvi"
-  | "showDsm"
-  | "showPointCloud"
-  | "showVectorOverlays"
-> = {
+const LAYER_STATE_KEY: Record<LayerKey, ShowKey> = {
   fieldBoundary: "showFieldBoundary",
   mesh: "showMesh",
   orthomosaic: "showOrthomosaic",
   ndvi: "showNdvi",
   problemZones: "showProblemZones",
+  weedAreas: "showWeedAreas",
   rgbPoints: "showRgbPoints",
   cropDensity: "showCropDensity",
   ndre: "showNdre",
@@ -69,6 +61,7 @@ const LAYER_STATE_KEY: Record<
   dsm: "showDsm",
   pointCloud: "showPointCloud",
   vectorOverlays: "showVectorOverlays",
+  vegetationMask: "showVegetationMask",
 };
 
 export const useDigitalTwinStore = create<DigitalTwinState>((set) => ({
@@ -86,6 +79,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>((set) => ({
   showOrthomosaic: true,
   showNdvi: false,
   showProblemZones: true,
+  showWeedAreas: true,
   showRgbPoints: true,
   showCropDensity: false,
   showNdre: false,
@@ -93,6 +87,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>((set) => ({
   showDsm: false,
   showPointCloud: false,
   showVectorOverlays: true,
+  showVegetationMask: false,
 
   toggleLayer: (key) =>
     set((s) => {

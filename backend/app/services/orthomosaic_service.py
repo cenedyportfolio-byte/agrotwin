@@ -160,12 +160,18 @@ def generate_preview_png(path: Path, asset_type: str, max_dim: int = 2048) -> tu
                 dst_crs="EPSG:4326",
                 src_nodata=src.nodata,
                 dst_nodata=np.nan,
-                resampling=Resampling.bilinear,
+                # class rasters must not be blended into in-between values
+                resampling=Resampling.nearest if asset_type == "vegetation_mask" else Resampling.bilinear,
             )
 
     valid_mask = ~np.isnan(dst[0])
 
-    if asset_type in ("ndvi", "ndre", "gndvi") and band_count == 1:
+    if asset_type == "vegetation_mask" and band_count == 1:
+        # 2 = vegetation (green), 1 = soil/other (transparent), nodata outside
+        veg = valid_mask & (dst[0] >= 1.5)
+        rgba = np.zeros((height, width, 4), dtype=np.uint8)
+        rgba[veg] = (34, 197, 94, 170)
+    elif asset_type in ("ndvi", "ndre", "gndvi") and band_count == 1:
         rgba = _colorize_index(dst[0], valid_mask)
     elif asset_type == "dsm" and band_count == 1:
         rgba = _colorize_elevation(dst[0], valid_mask)

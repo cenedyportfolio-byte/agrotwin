@@ -96,6 +96,30 @@ export interface DetectionZone {
   recommended_action: string;
 }
 
+/** Crop-row geometry / canopy closure / weed-candidate status measured on the orthomosaic (backend weed_service). */
+export interface RowMetrics {
+  method: string;
+  status: "measured" | "canopy_closed" | "rows_not_locked" | "rows_not_found" | "no_rgb_orthomosaic" | "error";
+  reason: string;
+  row_orientation_deg: number | null;
+  row_spacing_m: number | null;
+  row_signal: number | null;
+  lock_fraction: number | null;
+  row_cover_percent: number | null;
+  midrow_cover_percent: number | null;
+  canopy_closure_percent: number | null;
+  vegetation_cover_percent: number | null;
+  inter_row_vegetation_percent: number | null;
+  candidate_count: number;
+  candidate_area_m2: number;
+}
+
+export interface AnalysisMetrics {
+  rows?: RowMetrics;
+  detectors?: { installed: string[]; ran: Record<string, number>; note: string };
+  vegetation_mask?: { status: string; reason: string };
+}
+
 export interface AnalysisResult {
   survey_id: string;
   analysis_summary: {
@@ -106,6 +130,35 @@ export interface AnalysisResult {
   method: AnalysisMethod;
   is_mock: boolean;
   detections: DetectionZone[];
+  metrics: AnalysisMetrics;
+}
+
+export interface DetectorStatus {
+  models_dir: string;
+  installed: {
+    name: string;
+    task: string;
+    framework: string;
+    labels: string[];
+    trained_on: string;
+    input_gsd_m: number | null;
+    ready: boolean;
+    problem: string | null;
+  }[];
+  note: string;
+}
+
+export interface KnowledgeSource {
+  title: string;
+  section: string;
+  snippet: string;
+  score: number;
+}
+
+/** Zone types produced by trained detectors are "<model name>:<label>". */
+export const WEED_CANDIDATE = "weed_candidate";
+export function isWeedZone(type: string): boolean {
+  return type === WEED_CANDIDATE || type.includes(":");
 }
 
 export interface ProcessingStep {
@@ -148,5 +201,7 @@ export interface AskResponse {
   answer: string;
   /** "template" or "ollama:<model>" — which responder actually produced the answer. */
   responder: string;
+  /** Knowledge-base passages that matched the question (shown as sources). */
+  sources: KnowledgeSource[];
   context_used: Record<string, unknown>;
 }

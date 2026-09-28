@@ -11,6 +11,7 @@ export interface ViewerAssets {
   ndre: RasterAsset | null;
   gndvi: RasterAsset | null;
   dsm: RasterAsset | null;
+  vegetationMask: RasterAsset | null;
   meshUrl: string | null;
   meshKind: MeshKind;
   pointCloudUrl: string | null;
@@ -51,6 +52,7 @@ export function selectViewerAssets(assets: SurveyAsset[] | undefined, previewUrl
     ndre: toRaster(raster("ndre")),
     gndvi: toRaster(raster("gndvi")),
     dsm: toRaster(raster("dsm")),
+    vegetationMask: toRaster(raster("vegetation_mask")),
     meshUrl: mesh?.public_url ?? null,
     meshKind,
     pointCloudUrl: pointCloud?.public_url ?? null,

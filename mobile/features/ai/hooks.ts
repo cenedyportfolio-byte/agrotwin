@@ -36,6 +36,7 @@ export function useChat(surveyId: string | null | undefined) {
           text: res.answer,
           responder: res.responder,
           contextUsed: res.context_used,
+          sources: res.sources ?? [],
           status: undefined,
         });
       } catch (err) {

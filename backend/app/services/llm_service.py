@@ -34,6 +34,7 @@ TYPE_LABEL = {
     "bare_soil": "bare soil",
     "low_crop_density": "low crop density",
     "patchy_vegetation": "patchy/uneven vegetation",
+    "weed_candidate": "vegetation between crop rows (weed candidate)",
 }
 
 
@@ -77,6 +78,23 @@ def build_field_context(
     context["method"] = result.method
     context["method_description"] = METHOD_LABEL.get(result.method, result.method)
     context["tier_rule"] = TIER_RULE
+    metrics = json.loads(result.metrics_json) if result.metrics_json else {}
+    rows = metrics.get("rows") or {}
+    if rows:
+        context["rows"] = {
+            "status": rows.get("status"),
+            "explanation": rows.get("reason"),
+            "row_spacing_m": rows.get("row_spacing_m"),
+            "row_bearing_deg": rows.get("row_orientation_deg"),
+            "canopy_closure_percent": rows.get("canopy_closure_percent"),
+            "vegetation_cover_percent": rows.get("vegetation_cover_percent"),
+            "weed_candidate_count": rows.get("candidate_count", 0),
+        }
+    detectors = metrics.get("detectors") or {}
+    context["trained_detectors"] = {
+        "installed": detectors.get("installed", []),
+        "note": detectors.get("note", "No trained weed/disease detector is installed; the analysis is a vegetation index."),
+    }
     context["healthy_area_percent"] = result.healthy_area_percent
     context["attention_area_percent"] = result.attention_area_percent
     context["problem_area_percent"] = result.problem_area_percent
@@ -110,7 +128,7 @@ def build_field_context(
     return context
 
 
-def _query_ollama(question: str, context: dict) -> str | None:
+def _query_ollama(question: str, context: dict, passages: list) -> str | None:
     """Queries local Ollama instance running the offline model (e.g. llama3.2:3b)."""
     system_prompt = (
         "You are AgroTwin's AI Agricultural Assistant, an expert in precision agriculture, "
@@ -121,13 +139,19 @@ def _query_ollama(question: str, context: dict) -> str | None:
         "2. Do not invent diagnoses, crop diseases, or specific chemical/pesticide recommendations without ground confirmation.\n"
         "3. Explain vegetation metrics (NDVI, NDRE, ExG, health percentages) clearly and provide practical actionable advice (e.g., ground truthing, checking drainage, scouting weed patches or soil compaction in problem zones).\n"
         "4. If asked about who you are or general agronomy questions, introduce yourself politely and provide helpful context about the field.\n"
-        "5. Keep responses concise, well-structured, and easy for a farmer to read on a mobile or laptop screen."
+        "5. This reply is shown in a phone-sized chat bubble, not a printed report. Write it like a text message: "
+        "short plain sentences, 2-4 short paragraphs at most. Do NOT use markdown headings (no #, ##, ###) or "
+        "horizontal rules, and do not bold whole sentences. Use a short bullet list (plain \"-\" lines, no bold) "
+        "only when there are three or more genuinely separate items to list; otherwise just write sentences. "
+        "You may bold ONE or two key numbers or terms with **like this** if it truly helps, never more."
     )
 
     field_summary = json.dumps(context, indent=2)
+    notes = "\n\n".join(f"[{p.title} — {p.section}]\n{p.text}" for p in passages)
     prompt = (
         f"Field & Survey Context:\n```json\n{field_summary}\n```\n\n"
-        f"Farmer Question: {question}\n\n"
+        + (f"Reference notes from the AgroTwin knowledge base (general agronomy; cite them when used):\n{notes}\n\n" if notes else "")
+        + f"Farmer Question: {question}\n\n"
         "AgroTwin Assistant Response:"
     )
 
@@ -179,10 +203,36 @@ def _template_answer(question: str, context: dict) -> str:
     issues = context["detected_issues"]
 
     if any(k in q for k in ("weed", "where are the")):
+        rows = context.get("rows") or {}
+        weeds = [i for i in issues if i["type"] == TYPE_LABEL["weed_candidate"]]
+        if rows.get("status") == "measured" and weeds:
+            return (
+                f"{len(weeds)} patches of vegetation growing between the crop rows were flagged as weed candidates "
+                f"(rows are {rows.get('row_spacing_m')} m apart). I can't tell the species from the image — walk to "
+                "them, identify what is growing and how big it is, and record it."
+            )
+        if rows.get("status") in ("canopy_closed", "rows_not_locked", "rows_not_found"):
+            text = f"Weed candidates could not be measured on this survey: {rows.get('explanation')}."
+            if rows.get("status") == "canopy_closed":
+                text += " For weed mapping, fly the field early in the season (about V2–V4) while the rows are still separate."
+            if issues:
+                text += "\n\nThe zones that were flagged are areas of lower vegetation cover, not weeds:\n" + "\n".join(
+                    f"- {i['type']} ({i['severity']} severity): {i['recommended_action']}" for i in issues
+                )
+            return text
         if not issues:
             return "No specific zones were flagged in this survey — vegetation coverage looked consistent across the field."
         lines = [f"- {i['type']} ({i['severity']} severity, {round(i['confidence']*100)}% confidence): {i['recommended_action']}" for i in issues]
         return "I can't identify weed species from drone imagery alone (that needs a trained detector), but these zones showed measurably lower vegetation coverage:\n" + "\n".join(lines)
+
+    if any(k in q for k in ("row", "canopy", "spacing")):
+        rows = context.get("rows") or {}
+        if rows.get("row_spacing_m"):
+            text = f"Rows run at a bearing of {rows.get('row_bearing_deg')}° and are {rows.get('row_spacing_m')} m apart"
+            if rows.get("canopy_closure_percent") is not None:
+                text += f"; the canopy covers {rows.get('canopy_closure_percent')}% of the ground between rows"
+            return text + f". Vegetation cover across the field is {rows.get('vegetation_cover_percent')}%."
+        return "Row spacing could not be measured on this survey" + (f": {rows.get('explanation')}." if rows.get("explanation") else ".")
 
     if any(k in q for k in ("compare", "previous", "changed", "last survey")):
         prev = context.get("previous_survey")
@@ -224,12 +274,22 @@ def _template_answer(question: str, context: dict) -> str:
     )
 
 
-def answer_question(question: str, context: dict) -> tuple[str, str]:
-    """(answer, responder): the local Ollama model when reachable, else the
-    template responder over the same structured data."""
-    if context.get("analysis_available"):
-        ollama_response = _query_ollama(question, context)
-        if ollama_response:
-            return ollama_response, f"ollama:{settings.ollama_model}"
+def answer_question(question: str, context: dict) -> tuple[str, str, list[dict]]:
+    """(answer, responder, sources): the local Ollama model when reachable,
+    else the template responder over the same structured data; both get the
+    knowledge-base passages that match the question, returned as sources."""
+    from app.services import rag_service
 
-    return _template_answer(question, context), "template"
+    passages = rag_service.search(question, k=3)
+    sources = [p.as_dict() for p in passages]
+
+    if context.get("analysis_available"):
+        ollama_response = _query_ollama(question, context, passages)
+        if ollama_response:
+            return ollama_response, f"ollama:{settings.ollama_model}", sources
+
+    answer = _template_answer(question, context)
+    if passages:
+        top = passages[0]
+        answer += f"\n\nFrom the knowledge base — {top.title}, {top.section}: {top.snippet()}"
+    return answer, "template", sources
