@@ -9,11 +9,16 @@ All bands of a frame are looked up by frame_key and the indices are computed
 pixel-by-pixel from the raw digital numbers.
 
 Calibration and registration, both from DJI's own XMP metadata:
-- Radiometric: DJI's documented M3M workflow — vignetting correction with the
-  per-band polynomial about VignettingCenter, black-level subtraction, then
-  normalisation by SensorGain × ExposureTime and by the sun-sensor
-  Irradiance recorded at exposure. The result is relative reflectance (the
-  camera/sun-sensor constant cancels in normalized-difference indices).
+- Radiometric: DJI's documented M3M workflow, as OpenDroneMap implements it
+  (opendm/multispectral.py): black-level subtraction, vignetting correction
+  with the per-band polynomial about VignettingCenter, normalisation by
+  SensorGain × ExposureTime, the per-band SensorGainAdjustment, and the
+  sun-sensor Irradiance recorded at exposure. The result is relative
+  reflectance: what is left out (π, the DN bit depth, µs vs s) is one
+  constant shared by all bands, so it cancels in normalized-difference
+  indices. SensorGainAdjustment does not cancel — it differs per band
+  (0.51 Green … 0.91 NIR on the M3M) — and before 2026-10-10 it was missing,
+  as was the black-level-before-vignetting order, which biased NDVI.
 - Geometric: each band is warped by its CalibratedHMatrix into the common
   reference frame. Measured on this dataset: NIR↔RedEdge gradient
   correlation 0.21 → 0.59, NIR↔Red 0.12 → 0.20 — the MS lenses sit a few
@@ -110,30 +115,63 @@ def load_band(path: Path, max_dim: int | None = None, calibrate: bool = True, re
     return arr
 
 
-def _radiometric_calibration(arr: np.ndarray, xmp: dict, scale: float) -> np.ndarray:
-    black = xmp_float_or(xmp, "BlackLevel", 0.0)
-    gain = xmp_float_or(xmp, "SensorGain", 1.0)
-    exposure = xmp_float_or(xmp, "ExposureTime", 1.0)  # µs; only the per-band ratio matters
-    irradiance = xmp_float_or(xmp, "Irradiance", 1.0)
-    if gain <= 0 or exposure <= 0 or irradiance <= 0:
-        return arr
+@dataclass(frozen=True)
+class BandCalibration:
+    """DJI M3M per-image radiometric calibration (XMP drone-dji tags)."""
 
-    poly = xmp.get("VignettingPolynomial", {})
+    black: float
+    gain: float
+    exposure: float  # µs; a constant factor shared by all bands
+    irradiance: float  # sun-sensor reading at exposure
+    gain_adjustment: float  # per-band responsivity (SensorGainAdjustment)
+    vignetting_center: tuple[float, float] | None = None  # full-resolution pixels
+    vignetting_coeffs: tuple[float, ...] = ()  # V(r) = 1 + k1 r + k2 r² + …
+
+    @property
+    def factor(self) -> float:
+        """(DN - black) × V × factor = relative reflectance."""
+        return self.gain_adjustment / (self.gain * self.exposure * self.irradiance)
+
+
+def band_calibration(xmp: dict) -> BandCalibration | None:
+    """The calibration terms of a band image, or None when its XMP lacks them."""
+    from app.services.metadata_service import xmp_float
+
+    if not xmp or xmp_float(xmp, "BlackLevel") is None:
+        return None
+    cal = BandCalibration(
+        black=xmp_float_or(xmp, "BlackLevel", 0.0),
+        gain=xmp_float_or(xmp, "SensorGain", 1.0),
+        exposure=xmp_float_or(xmp, "ExposureTime", 1.0),
+        irradiance=xmp_float_or(xmp, "Irradiance", 1.0),
+        gain_adjustment=xmp_float_or(xmp, "SensorGainAdjustment", 1.0),
+    )
+    if cal.gain <= 0 or cal.exposure <= 0 or cal.irradiance <= 0 or cal.gain_adjustment <= 0:
+        return None
     try:
-        coeffs = [float(c) for c in poly["Seq"]["li"]]
-        cx, cy = [float(c) for c in xmp["VignettingCenter"]["Seq"]["li"]]
+        coeffs = tuple(float(c) for c in xmp["VignettingPolynomial"]["Seq"]["li"])
+        cx, cy = (float(c) for c in xmp["VignettingCenter"]["Seq"]["li"])
     except (KeyError, TypeError, ValueError):
-        coeffs = []
-    if coeffs:
+        return cal
+    return BandCalibration(cal.black, cal.gain, cal.exposure, cal.irradiance, cal.gain_adjustment, (cx, cy), coeffs)
+
+
+def _radiometric_calibration(arr: np.ndarray, xmp: dict, scale: float) -> np.ndarray:
+    cal = band_calibration(xmp)
+    if cal is None:
+        return arr
+    arr = np.clip(arr - cal.black, 0.0, None)
+    if cal.vignetting_coeffs and cal.vignetting_center:
         h, w = arr.shape
         ys, xs = np.mgrid[0:h, 0:w]
-        r = np.hypot(xs / scale - cx, ys / scale - cy)  # polynomial is in full-res pixels
+        cx, cy = cal.vignetting_center
+        # polynomial is in full-res pixels; (x + 0.5) / scale - 0.5 maps a resampled pixel centre back
+        r = np.hypot((xs + 0.5) / scale - 0.5 - cx, (ys + 0.5) / scale - 0.5 - cy)
         v = np.ones_like(arr)
-        for i, k in enumerate(coeffs, start=1):
+        for i, k in enumerate(cal.vignetting_coeffs, start=1):
             v += k * r**i
         arr = arr * v
-
-    return np.clip((arr - black) / (gain * exposure) / irradiance, 0.0, None)
+    return arr * cal.factor
 
 
 def _register_band(arr: np.ndarray, xmp: dict, scale: float) -> np.ndarray:

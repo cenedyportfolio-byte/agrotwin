@@ -146,11 +146,35 @@ def _build_mosaics_and_tiles(db: Session, survey: models.Survey) -> list[models.
         # the pyramid keeps deep zoom sharp; the viewer falls back to a flat preview without it
         build_survey_tiles(db, survey, layers=tuple(sorted({a.asset_type for a in assets})))
         db.commit()
+    build_photogrammetry_products(db, survey)
     return assets
+
+
+def build_photogrammetry_products(db: Session, survey: models.Survey) -> None:
+    """With an imported OpenDroneMap run: the band orthophotos on its camera
+    solution (GPU), their tiles, and the GCP targets the field boundary is drawn
+    around. Without one, nothing — the quick mosaics stay the products."""
+    from app.services import band_ortho_service, gcp_service
+    from app.services.survey_service import update_field_boundary_from_images
+    from app.services.tile_service import build_survey_tiles
+
+    created = band_ortho_service.build_band_orthos(db, survey)
+    if created:
+        db.commit()
+        db.refresh(survey)
+        build_survey_tiles(db, survey, layers=band_ortho_service.TILE_LAYERS)
+        db.commit()
+    if gcp_service.detect_and_store(db, survey):
+        db.flush()
+        db.refresh(survey)
+        update_field_boundary_from_images(db, survey.field, survey.images, survey.gcps)
+        band_ortho_service.update_qa_gcps(survey)
+    db.commit()
 
 
 def run_full_pipeline(db: Session, job: models.ProcessingJob) -> None:
     from app.services.analysis_service import analyze_survey
+    from app.services.band_ortho_service import SOURCE as BAND_SOURCE
     from app.services.survey_service import update_field_boundary_from_images
 
     survey = job.survey
@@ -158,11 +182,13 @@ def run_full_pipeline(db: Session, job: models.ProcessingJob) -> None:
     _complete(db, job, "images_uploaded")
     _complete(db, job, "metadata_extracted")  # EXIF/XMP is read as each file arrives
 
-    update_field_boundary_from_images(db, survey.field, survey.images)
+    update_field_boundary_from_images(db, survey.field, survey.images, survey.gcps)
     _complete(db, job, "processing_field")
 
     if not any(a.source == "direct_georeferencing" for a in survey.assets):
         _build_mosaics_and_tiles(db, survey)
+    elif not any(a.source == BAND_SOURCE for a in survey.assets):
+        build_photogrammetry_products(db, survey)
     _complete(db, job, "generating_orthomosaic")
 
     analyze_survey(db, survey, survey.field)

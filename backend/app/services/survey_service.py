@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from shapely.geometry import MultiPoint, mapping
+from shapely.geometry import MultiPoint, Polygon, mapping
 from sqlalchemy.orm import Session
 
 from app import models
@@ -42,6 +42,7 @@ def camera_fields(meta) -> dict:
     return {
         "gimbal_yaw_deg": meta.gimbal_yaw_deg,
         "gimbal_pitch_deg": meta.gimbal_pitch_deg,
+        "gimbal_roll_deg": meta.gimbal_roll_deg,
         "rel_altitude_m": meta.rel_altitude_m,
         "focal_px": meta.focal_px,
         "cx_px": meta.cx_px,
@@ -66,6 +67,24 @@ def backfill_camera_metadata(db: Session, survey: models.Survey) -> int:
         if meta.lat is not None:
             img.lat, img.lon = meta.lat, meta.lon
         n += 1
+    db.flush()
+    return n
+
+
+def backfill_gimbal_roll(db: Session, survey: models.Survey) -> int:
+    """Reads GimbalRollDegree for frames ingested before it was stored; the
+    mosaic needs it to place 180°-roll frames the right way up."""
+    from app.services import gpu
+    from app.services.metadata_service import read_dji_xmp, xmp_float
+
+    todo = [img for img in survey.images if img.gimbal_yaw_deg is not None and img.gimbal_roll_deg is None]
+    paths = [img.path for img in todo]
+    n = 0
+    for img, (_, xmp) in zip(todo, gpu.prefetch(paths, read_dji_xmp)):
+        roll = xmp_float(xmp, "GimbalRollDegree")
+        if roll is not None:
+            img.gimbal_roll_deg = roll
+            n += 1
     db.flush()
     return n
 
@@ -119,8 +138,22 @@ def _project_flat(lat: float, lon: float, lat0: float, lon0: float) -> tuple[flo
     return x, y
 
 
-def compute_boundary_and_area(points: list[tuple[float, float]]) -> tuple[dict | None, float | None, float, float]:
-    """points: list of (lon, lat). Returns (geojson_polygon, area_hectares, center_lat, center_lon)."""
+def _unproject_flat(x: float, y: float, lat0: float, lon0: float) -> tuple[float, float]:
+    """Inverse of _project_flat: (lon, lat)."""
+    lat = lat0 + math.degrees(y / EARTH_RADIUS_M)
+    lon = lon0 + math.degrees(x / (EARTH_RADIUS_M * math.cos(math.radians(lat0))))
+    return lon, lat
+
+
+def compute_boundary_and_area(
+    points: list[tuple[float, float]],
+    extra_points: list[tuple[float, float]] | tuple = (),
+    margin_m: float = 0.0,
+) -> tuple[dict | None, float | None, float, float]:
+    """points: list of (lon, lat) camera positions. Returns (geojson_polygon,
+    area_hectares, center_lat, center_lon). extra_points (ground control
+    targets) are included in the outline but not in the centre; margin_m
+    widens the outline so the targets sit inside it rather than on its edge."""
     if len(points) < 3:
         lons = [p[0] for p in points]
         lats = [p[1] for p in points]
@@ -133,13 +166,16 @@ def compute_boundary_and_area(points: list[tuple[float, float]]) -> tuple[dict |
     center_lon = sum(lons) / len(lons)
     center_lat = sum(lats) / len(lats)
 
-    hull = MultiPoint(points).convex_hull
-    boundary_geojson = mapping(hull)
-
-    flat_points = [_project_flat(lat, lon, center_lat, center_lon) for lon, lat in points]
+    flat_points = [_project_flat(lat, lon, center_lat, center_lon) for lon, lat in [*points, *extra_points]]
     flat_hull = MultiPoint(flat_points).convex_hull
-    area_m2 = flat_hull.area
-    area_hectares = area_m2 / 10000
+    if margin_m > 0:
+        flat_hull = flat_hull.buffer(margin_m, join_style=2, mitre_limit=2.0)
+    if not extra_points and margin_m <= 0:
+        boundary_geojson = mapping(MultiPoint(points).convex_hull)
+    else:
+        boundary_geojson = mapping(Polygon([_unproject_flat(x, y, center_lat, center_lon)
+                                            for x, y in flat_hull.exterior.coords]))
+    area_hectares = flat_hull.area / 10000
 
     return boundary_geojson, round(area_hectares, 3), center_lat, center_lon
 
@@ -221,12 +257,22 @@ def delete_survey_files(survey: models.Survey) -> None:
         p.unlink(missing_ok=True)
 
 
-def update_field_boundary_from_images(db: Session, field: models.Field, images: list[models.SurveyImage]) -> None:
+GCP_MARGIN_M = 2.0  # ground control targets stay this far inside the field outline
+
+
+def update_field_boundary_from_images(
+    db: Session, field: models.Field, images: list[models.SurveyImage], gcps: list[models.GroundControlPoint] = ()
+) -> None:
+    """Field outline = convex hull of the camera positions, widened to take in
+    the survey's ground control targets (with GCP_MARGIN_M) when it has any."""
     points = [(img.lon, img.lat) for img in images if img.lat is not None and img.lon is not None]
     if not points:
         return
 
-    boundary, area_ha, center_lat, center_lon = compute_boundary_and_area(points)
+    extra = [(g.lon, g.lat) for g in gcps]
+    boundary, area_ha, center_lat, center_lon = compute_boundary_and_area(
+        points, extra, GCP_MARGIN_M if extra else 0.0
+    )
     field.boundary_geojson = json.dumps(boundary) if boundary else None
     field.area_hectares = area_ha
     field.center_lat = center_lat

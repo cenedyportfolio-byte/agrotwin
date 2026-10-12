@@ -5,6 +5,7 @@
 # --- AgroTwin Local Data Directory & Database (Critical: 9+ GB) ---
 /data/
 data/
+Data
 *.db
 *.db-journal
 *.sqlite

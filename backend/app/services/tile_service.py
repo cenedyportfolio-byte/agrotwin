@@ -39,6 +39,7 @@ from PIL import Image
 from app.config import settings
 from app.services import gpu
 from app.services import orthomosaic_service as ortho
+from app.services.asset_sources import source_rank
 
 log = logging.getLogger(__name__)
 
@@ -52,12 +53,13 @@ MIN_ZOOM = 14
 MAX_ZOOM_CAP = 24
 INDEX_LAYERS = {"ndvi", "ndre", "gndvi"}
 ELEVATION_LAYERS = {"dsm", "dtm"}
-SOURCE_RANK = {"photogrammetry_odm": 0, "direct_georeferencing": 1}
+BAND_LAYERS = {"band_green", "band_red", "band_red_edge", "band_nir"}  # single reflectance bands, shown grey
+PHOTO_LAYERS = {"orthomosaic", "false_color", "alignment_check"}  # display-ready RGB
 
 
 def tile_ext(layer: str) -> str:
-    # photos compress far better as lossy WebP; colour ramps stay exact as PNG
-    return "webp" if layer == "orthomosaic" else "png"
+    # photos compress far better as lossy WebP; colour ramps and grey bands stay exact as PNG
+    return "webp" if layer in PHOTO_LAYERS else "png"
 
 
 def lonlat_to_tile(lon: float, lat: float, z: int) -> tuple[int, int]:
@@ -73,9 +75,11 @@ def tile_size_m(z: int) -> float:
 
 
 def zoom_for_gsd(gsd_m: float, lat: float) -> int:
-    """Deepest zoom whose ground resolution at this latitude is <= the raster's GSD."""
+    """Deepest zoom whose ground resolution at this latitude is <= the raster's GSD
+    (within 5 %: a 1.50 cm raster stops at z23's 1.49 cm instead of quadrupling
+    the tile count at z24 for detail it does not have)."""
     ground_per_px_z0 = 2 * math.pi * R * math.cos(math.radians(lat)) / TILE
-    z = math.ceil(math.log2(ground_per_px_z0 / gsd_m))
+    z = math.ceil(math.log2(ground_per_px_z0 / gsd_m) - math.log2(1.05))
     return int(min(max(z, MIN_ZOOM), MAX_ZOOM_CAP))
 
 
@@ -87,8 +91,8 @@ def _source_gsd_m(src) -> float:
 
 
 def _stats_for_colorize(src, layer: str) -> tuple[float, float] | None:
-    """Global stretch limits so every tile of a DSM shares one colour ramp."""
-    if layer not in ELEVATION_LAYERS:
+    """Global stretch limits so every tile of a DSM or band shares one ramp."""
+    if layer not in ELEVATION_LAYERS and layer not in BAND_LAYERS:
         return None
     scale = max(1, max(src.width, src.height) // 2048)
     arr = src.read(1, out_shape=(src.height // scale, src.width // scale), masked=True).astype(np.float32)
@@ -104,6 +108,10 @@ def _colorize(bands: np.ndarray, alpha: np.ndarray, layer: str, stats) -> np.nda
     valid = alpha > 0
     if layer in INDEX_LAYERS:
         rgba = ortho._colorize_index(bands[0], valid)
+    elif layer in BAND_LAYERS:
+        lo, hi = stats
+        g = (np.clip((np.nan_to_num(bands[0], nan=lo) - lo) / (hi - lo), 0, 1) * 255).astype(np.uint8)
+        rgba = np.dstack([g, g, g, np.zeros_like(g)])
     elif layer in ELEVATION_LAYERS:
         lo, hi = stats
         v = np.clip((np.nan_to_num(bands[0], nan=lo) - lo) / (hi - lo), 0, 1)
@@ -347,7 +355,7 @@ def build_survey_tiles(db, survey, layers: tuple[str, ...] = ("orthomosaic", "nd
                  and a.path.exists()]
         if not cands:
             continue
-        src = min(cands, key=lambda a: SOURCE_RANK.get(a.source, 2))
+        src = min(cands, key=lambda a: source_rank(a.source))
         out_dir = public_tiles_dir(survey.id, layer)
         meta = build_xyz_tiles(src.path, out_dir, layer, max_zoom=max_zoom)
         for old in [a for a in survey.assets if a.asset_type == layer and a.format == "xyz"]:

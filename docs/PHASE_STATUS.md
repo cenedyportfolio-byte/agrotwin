@@ -38,6 +38,25 @@ Roadmap phases per the original spec, and what's actually done.
       (CalibratedHMatrix) bands, colorized previews, map-space index mosaics.
       The survey currently loaded on this machine ("40 ft RGB Site") is
       RGB-only, so those layers are present in code but not in its data.
+      **2026-10-10:** with an imported ODM run, the band frames are placed on
+      ODM's bundle-adjusted cameras and DSM on the GPU (`band_ortho_service`,
+      `scripts/build_band_orthos.py`) instead of by GPS + reported gimbal
+      attitude: four band orthophotos at 1.5 cm, NDVI/NDRE/GNDVI from them,
+      false-colour and alignment-check layers, radiometric balancing between
+      captures, and a QA file with the measured offsets. **2026-10-11:** a
+      final per-band co-registration onto the photo brings the bands to
+      ~0.1 cm of each other and of the photo (median; was 0.2–1.5 cm, 3–6 cm
+      at the coverage edge), every GCP target within 1.4 cm and the 66 small
+      markers within 2.7 cm (median 0.4 cm). The quick index mosaics
+      remain the fallback; measured against ODM they are 2–4 m off. The
+      radiometric calibration now includes DJI's per-band SensorGainAdjustment
+      and subtracts the black level before the vignetting correction (as ODM
+      does) — NDVI values and therefore the health shares changed: on the
+      Ditty Road survey 19.6 / 27.9 / 52.5 % → 49.9 / 44.4 / 5.6 %
+      (healthy / attention / problem; 49.4 / 44.3 / 6.3 % with the five-GCP
+      boundary, 49.0 / 43.9 / 7.1 % with the boundary that also takes in the
+      small markers, 1.30 ha); see fixing/FIXES_NEEDED.md for how much of that is alignment
+      and how much calibration.
 - [x] Phase 7 — Analysis measured from the survey's own imagery, method
       recorded on every result: `ndvi_map` / `exg_map` (5 m cells on the
       georeferenced NDVI mosaic / RGB orthomosaic — true area shares, no
@@ -191,7 +210,10 @@ Roadmap phases per the original spec, and what's actually done.
 ## Known simplifications (documented, not hidden)
 
 - Field area/boundary use a flat local-projection approximation
-  (`survey_service.py`), fine at field scale, not geodetically exact.
+  (`survey_service.py`), fine at field scale, not geodetically exact. The
+  outline is the camera-position hull widened to take in the survey's ground
+  control targets (found in the photogrammetric orthophoto, `gcp_service`)
+  with a 2 m margin.
 - SQLite (WAL) + plain GeoJSON-in-text columns, not PostGIS. Service layer
   is the seam for that migration later.
 - Tier thresholds are relative to each survey's own p90 cover, so two

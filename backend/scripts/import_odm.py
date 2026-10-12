@@ -15,6 +15,10 @@ source="photogrammetry_odm", which the viewer ranks above the quick
 direct-georeferenced and splat-derived products. Tile pyramids are then
 rebuilt from the new rasters so the map zooms to the native GSD.
 
+Afterwards the multispectral orthophotos are built on the GPU from this run's
+camera solution (app/services/band_ortho_service.py) and the GCP targets are
+found in the new orthophoto (--skip-bands to leave them).
+
 Run (agrotwin venv):
     python -m scripts.import_odm --survey <id> [--odm-dir data/surveys/<id>/odm]
 """
@@ -113,6 +117,8 @@ def main():
     ap.add_argument("--odm-dir", default=None)
     ap.add_argument("--skip-tiles", action="store_true")
     ap.add_argument("--skip-mesh", action="store_true", help="keep the existing reality-mesh tileset")
+    ap.add_argument("--skip-bands", action="store_true",
+                    help="don't build the multispectral orthophotos / GCPs on the ODM camera solution")
     args = ap.parse_args()
 
     init_db()
@@ -161,6 +167,12 @@ def main():
         if not args.skip_tiles:
             build_survey_tiles(db, survey, ("orthomosaic", "dsm", "dtm"))
             db.commit()
+        if not args.skip_bands:
+            # band orthophotos (GPU) on this run's cameras, GCP targets, field boundary
+            from app.services.processing_service import build_photogrammetry_products
+
+            db.refresh(survey)
+            build_photogrammetry_products(db, survey)
     finally:
         db.close()
 

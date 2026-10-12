@@ -41,9 +41,11 @@ Open http://localhost:3000 (API docs at http://localhost:8000/docs). Both
 launchers keep temp files, package caches and logs inside this folder
 (`.cache/`, `logs/`).
 
-Backend Python: `backend/.venv-gpu` (Python 3.11 + CUDA torch, gsplat,
-pycolmap — used for everything when present) or `backend/.venv` (CPU only).
-Dependencies: `backend/requirements.txt`, `frontend/package.json`.
+Backend Python: the launchers use the first Python whose torch sees a CUDA
+GPU — `AGROTWIN_PYTHON` if set, then `backend/.venv-gpu`, `~/.venvs/agrotwin`
+(the Linux CUDA venv when the drive's own venvs are Windows builds), then
+`backend/.venv` — and say so loudly if processing would fall back to the CPU.
+Dependencies: `backend/requirements.txt` (+ `requirements-gpu.txt`), `frontend/package.json`.
 
 ## What you can do
 
@@ -63,7 +65,18 @@ Dependencies: `backend/requirements.txt`, `frontend/package.json`.
    3D Twin (terrain / reality mesh / imported 3D Tiles / point cloud) and
    Photorealistic (Gaussian splats) modes; simple layer names by default,
    Advanced View for NDVI/NDRE/GNDVI, elevation, point cloud, coordinates.
+   With an imported OpenDroneMap run it also has the four multispectral band
+   orthophotos (Green, Red, Red Edge, NIR), a false-colour (NIR·R·G) layer and
+   an alignment check (NIR band over the photo) to see that they line up, and
+   the ground control targets, which the field boundary is drawn around: the
+   40–60 cm GCPs ("GCP N", …) and the small ~17 cm markers ("M1", "M2", …,
+   labelled once you zoom in).
    Click a zone for type, severity, confidence and a safe recommended action.
+   It opens on the whole globe, which turns to the field and flies down to it
+   (a click skips ahead; a `?cam=` link opens straight at its view).
+   Click or tap a GCP or marker for its coordinates (latitude/longitude,
+   degrees-minutes-seconds, elevation) with a copy button — on a phone there
+   is no cursor readout.
 5. **Ask AI** (`/ask-ai`): questions answered from the survey's measured
    numbers — through a local Ollama model when one is running, otherwise by a
    template responder. The answer says which.
@@ -164,11 +177,35 @@ models, splats — are always served locally. Settings shows what is active.
 .\run_gpu.ps1 -m scripts.build_splats --survey <id>   # SfM -> geo-align -> 3DGS -> SPZ 3D Tiles
 .\run_gpu.ps1 -m scripts.build_dense  --survey <id>   # dense cloud, DSM, textured terrain mesh
 .\run_gpu.ps1 -m scripts.build_tiles  --survey <id>   # XYZ tile pyramids for the rasters
-.\run_gpu.ps1 -m scripts.import_odm   --survey <id>   # bring in an OpenDroneMap run
+.\run_gpu.ps1 -m scripts.import_odm   --survey <id>   # bring in an OpenDroneMap run (+ the two below)
+.\run_gpu.ps1 -m scripts.build_band_orthos --survey <id>  # band/index orthophotos on the ODM cameras, tiles, GCPs, analysis
+.\run_gpu.ps1 -m scripts.detect_gcps --survey <id> [--readings ../cordinate/gcp_readings.csv]
 ```
+
+On Linux run the same modules with the CUDA venv, e.g.
+`~/.venvs/agrotwin/bin/python -m scripts.build_band_orthos --survey <id>`.
 
 Outputs land in `frontend/public/{tiles,models,splats}/<survey_id>/` and are
 picked up by the viewer on the next page load.
+
+**Why the band orthophotos exist.** The quick mosaics place every frame from
+its GPS position and the gimbal's reported attitude on flat ground. Checked
+against OpenDroneMap on the Ditty Road flight, that is 2–4 m off (the M3M
+camera looks ~7° away from the reported −90°, and the error flips between
+flight lines, so a target can even appear twice). `build_band_orthos` instead
+places each band frame with ODM's bundle-adjusted cameras and surface model:
+it measures the band cameras' fixed rotations relative to the RGB camera
+from the data, fits every capture against the photo, takes each pixel from
+the one most vertical exposure (no averaging), balances brightness between
+captures taken under passing cloud, then co-registers the bands onto the
+photo locally (Green against the photo, each other band against Green), and
+writes `band_ortho_qa.json` with the measured band-to-band, band-to-photo and
+GCP offsets (bands ~0.1 cm apart, ~0.1 cm from the photo, GCPs within
+1.4 cm and the small markers within 2.7 cm here).
+The NDVI/NDRE/GNDVI the analysis uses then come from these bands. The
+radiometry follows DJI's M3M workflow as OpenDroneMap implements it,
+including the per-band `SensorGainAdjustment` (fixed 2026-10-10; NDVI was
+biased before).
 
 ## Architecture notes
 

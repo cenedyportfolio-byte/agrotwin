@@ -10,6 +10,7 @@ import { useDigitalTwinStore } from "@/lib/digitalTwinStore";
 import { CesiumToolbar } from "@/components/cesium/CesiumToolbar";
 import { LayerControls } from "@/components/cesium/LayerControls";
 import { DetectionPanel } from "@/components/cesium/DetectionPanel";
+import { GcpPanel } from "@/components/cesium/GcpPanel";
 import { MethodBadge, MockDataBadge } from "@/components/dashboard/StatusPill";
 import { groupFrames } from "@/lib/frames";
 import { selectViewerAssets } from "@/lib/surveyAssets";
@@ -62,6 +63,11 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
     queryFn: () => api.listSurveyAssets(surveyId as string),
     enabled: !!surveyId,
   });
+  const { data: gcps } = useQuery({
+    queryKey: ["survey-gcps", surveyId],
+    queryFn: () => api.listGcps(surveyId as string),
+    enabled: !!surveyId,
+  });
   // keeps the viewer current while the backend is still building this survey's products
   const { job, active: processing } = useProcessingJob(surveyId);
 
@@ -72,6 +78,8 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
   }, []);
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
   const [layerError, setLayerError] = useState<string | null>(null);
+  const [selectedGcpId, setSelectedGcpId] = useState<string | null>(null);
+  const showGcps = useDigitalTwinStore((s) => s.showGcps);
 
   // Deep link: ?mode=field-map|3d-twin|photorealistic
   const setMode = useDigitalTwinStore((s) => s.setMode);
@@ -144,6 +152,7 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
   const frameAnchors = useMemo(() => groupFrames(images ?? []).map((f) => f.anchor), [images]);
   const detections = analysis?.detections ?? [];
   const selectedZone = detections.find((d) => d.id === selectedDetectionId) ?? null;
+  const selectedGcp = (showGcps && gcps?.find((g) => g.id === selectedGcpId)) || null;
 
   // Capture geometry from the frames' own gimbal pitch: a nadir-only flight
   // (all ≈ −90°) leaves depth poorly constrained along the viewing rays, so
@@ -175,6 +184,13 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         gndvi={viewerAssets.gndvi}
         dsm={viewerAssets.dsm}
         vegetationMask={viewerAssets.vegetationMask}
+        bandGreen={viewerAssets.bandGreen}
+        bandRed={viewerAssets.bandRed}
+        bandRedEdge={viewerAssets.bandRedEdge}
+        bandNir={viewerAssets.bandNir}
+        falseColor={viewerAssets.falseColor}
+        alignmentCheck={viewerAssets.alignmentCheck}
+        gcps={gcps}
         meshUrl={viewerAssets.meshUrl}
         meshKind={viewerAssets.meshKind}
         pointCloudUrl={viewerAssets.pointCloudUrl}
@@ -182,6 +198,8 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         surveyId={surveyId}
         initialCamera={initialCamera}
         onSelectDetection={setSelectedDetectionId}
+        onSelectGcp={setSelectedGcpId}
+        selectedGcpId={selectedGcp?.id ?? null}
         onSplatStatus={onSplatStatus}
         onCursor={advanced ? setCursor : undefined}
         onLayerError={setLayerError}
@@ -238,6 +256,12 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
           hasVegetationMask={!!viewerAssets.vegetationMask}
           hasWeedAreas={detections.some((d) => isWeedZone(d.type))}
           weedHint={analysis?.metrics?.rows?.reason}
+          hasGcps={(gcps?.length ?? 0) > 0}
+          hasBands={!!(viewerAssets.bandGreen && viewerAssets.bandRed && viewerAssets.bandRedEdge && viewerAssets.bandNir)}
+          hasFalseColor={!!viewerAssets.falseColor}
+          hasAlignmentCheck={!!viewerAssets.alignmentCheck}
+          orthomosaicSource={viewerAssets.orthomosaicSource}
+          indexSource={viewerAssets.indexSource}
         />
       </div>
 
@@ -245,6 +269,16 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
       {selectedZone && (
         <div className="pointer-events-none absolute right-2 sm:right-4 top-[18rem] sm:top-[21rem] z-20">
           <DetectionPanel zone={selectedZone} onClose={() => setSelectedDetectionId(null)} />
+        </div>
+      )}
+
+      {/* ground control target: its coordinates (no cursor readout on a phone).
+          Docked at the bottom: mid-screen on a phone it would cover the target
+          just tapped, and on the right under the layer list it would cover the
+          list's lower rows (much longer in Advanced View). */}
+      {selectedGcp && (
+        <div className="pointer-events-none absolute inset-x-2 bottom-12 z-20 sm:left-auto sm:right-4 sm:bottom-16">
+          <GcpPanel gcp={selectedGcp} onClose={() => setSelectedGcpId(null)} />
         </div>
       )}
 

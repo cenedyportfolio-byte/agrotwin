@@ -19,14 +19,23 @@ Run with the GPU venv (needs CUDA toolkit + MSVC on PATH to JIT the kernels):
 import argparse
 import json
 import math
+import os
 import random
 import time
 from pathlib import Path
 
-import numpy as np
-import torch
-import torch.nn.functional as F
-from PIL import Image
+# Training runs on the GPU; the only CPU work is copying frames into pinned
+# memory. With the default OpenMP pool (one thread per core, spinning 200 ms
+# after every parallel region) that copy kept 8 laptop cores at 100 % for
+# nothing and ate the power budget the GPU shares with the CPU. Set before
+# torch loads OpenMP.
+os.environ.setdefault("KMP_BLOCKTIME", "0")
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+import torch.nn.functional as F  # noqa: E402
+from PIL import Image  # noqa: E402
 
 AGROTWIN = Path(__file__).resolve().parents[2]
 SPLATS_DIR = AGROTWIN / "data" / "splats"
@@ -298,9 +307,29 @@ def load_checkpoint(path: Path, device):
     return ck["step"], splats, optimizers, ck["scheduler"]
 
 
+def _drop_gcc_flags_for_msvc():
+    """gsplat 1.5.3 passes GCC's -Wno-attributes to the host compiler when it
+    JIT-builds its kernels; MSVC rejects it (D8021) and the build stops. It
+    imports torch's _jit_compile by name, so this has to run before gsplat is."""
+    import os
+
+    import torch.utils.cpp_extension as ext
+
+    if os.name != "nt" or getattr(ext._jit_compile, "_msvc_safe", False):
+        return
+    jit = ext._jit_compile
+
+    def _jit_compile(name, sources, extra_cflags, *args, **kwargs):
+        return jit(name, sources, [f for f in extra_cflags or [] if f != "-Wno-attributes"], *args, **kwargs)
+
+    _jit_compile._msvc_safe = True
+    ext._jit_compile = _jit_compile
+
+
 def train(proj: Path, steps: int, sh_degree: int, cap_max: int, device: str, save_every: int, max_scale_m: float,
           strategy_name: str = "default", opacity_reg: float = 0.0, scale_reg: float = 0.0,
           ground_below_m: float = 1.0, ground_above_m: float = 1.5):
+    _drop_gcc_flags_for_msvc()
     from gsplat.rendering import rasterization
     from gsplat.strategy import DefaultStrategy, MCMCStrategy
     from gsplat.strategy.ops import remove

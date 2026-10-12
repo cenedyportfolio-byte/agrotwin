@@ -1,5 +1,5 @@
 # Starts AgroTwin on Windows from this folder.
-#   .\run.ps1              production: builds the frontend once, then serves it
+#   .\run.ps1              production: builds the frontend when its source changed, then serves it
 #   .\run.ps1 dev          hot-reloading dev servers
 #   .\run.ps1 -Lan         also listen on the LAN (0.0.0.0) so phones running
 #                          the mobile app can reach :8000 and :3000
@@ -104,10 +104,19 @@ $backend = Start-Process -FilePath $python -ArgumentList $backendArgs -WorkingDi
 
 $next = "node_modules\next\dist\bin\next"
 if ($Mode -eq "dev") {
-  $frontendArgs = "$next dev -H $bind -p 3000"
+  $frontendArgs = "$next dev --webpack -H $bind -p 3000"
 } else {
-  if (-not (Test-Path "$root\frontend\.next\BUILD_ID")) {
-    Write-Host "Building the frontend (first run only)..."
+  # rebuild when the source changed since the last build, or the old frontend keeps being served
+  $buildId = "$root\frontend\.next\BUILD_ID"
+  $stale = -not (Test-Path $buildId)
+  if (-not $stale) {
+    $built = (Get-Item $buildId).LastWriteTime
+    $sources = "app", "components", "lib", "next.config.ts", "package.json" | ForEach-Object { "$root\frontend\$_" }
+    $stale = [bool](Get-ChildItem $sources -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTime -gt $built } | Select-Object -First 1)
+  }
+  if ($stale) {
+    Write-Host "Building the frontend (source changed since the last build)..."
     Push-Location "$root\frontend"
     & node scripts\copy-cesium.mjs
     & node $next build

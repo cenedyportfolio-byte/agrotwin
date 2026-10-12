@@ -72,6 +72,26 @@ export interface SurveyAsset {
   created_at: string;
 }
 
+/** A ground control target (black/white checkerboard) found in the survey's photogrammetric
+ * orthophoto: a GCP (40–60 cm, "GCP N") or a small marker (~17 cm, "M1", "M2", …). */
+export interface GroundControlPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Surface height at the target, in the photogrammetry's own vertical datum. */
+  height_m: number | null;
+  source: string;
+  score: number | null;
+  /** Side length of the checkerboard, in metres (null on rows detected before sizes were stored). */
+  size_m: number | null;
+}
+
+/** The ~17 cm markers (M1, M2, …), as opposed to the 40–60 cm GCPs. */
+export function isMarker(g: GroundControlPoint): boolean {
+  return g.size_m != null && g.size_m < 0.3;
+}
+
 export interface SurveyAvailability {
   rgb_images: boolean;
   gps_metadata: boolean;

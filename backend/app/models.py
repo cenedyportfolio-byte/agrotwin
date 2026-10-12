@@ -82,6 +82,7 @@ class Survey(Base):
     analysis_results: Mapped[list["AnalysisResult"]] = relationship(
         back_populates="survey", cascade="all, delete-orphan"
     )
+    gcps: Mapped[list["GroundControlPoint"]] = relationship(back_populates="survey", cascade="all, delete-orphan")
 
 
 class SurveyImage(Base):
@@ -113,6 +114,8 @@ class SurveyImage(Base):
     # Camera geometry from DJI XMP — what direct georeferencing needs.
     gimbal_yaw_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
     gimbal_pitch_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 0 or 180 on nadir DJI frames; 180 means the image is turned 180° from its yaw
+    gimbal_roll_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
     rel_altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)  # AGL from takeoff
     focal_px: Mapped[float | None] = mapped_column(Float, nullable=True)
     cx_px: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -173,6 +176,28 @@ class SurveyAsset(Base):
         except ValueError:
             return None
         return f"/api/surveys/{self.survey_id}/assets/{self.id}/files/{quote(rel.as_posix())}"
+
+
+class GroundControlPoint(Base):
+    """A ground control target (black/white checkerboard) laid out in the field
+    for the flight: a GCP (40-60 cm) or a small marker (~17 cm, named M1, M2, …).
+    source="detected": found in the survey's photogrammetric orthophoto
+    (gcp_service), placed as accurately as that orthophoto."""
+
+    __tablename__ = "ground_control_points"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    survey_id: Mapped[str] = mapped_column(ForeignKey("surveys.id"))
+    name: Mapped[str] = mapped_column(String)
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    height_m: Mapped[float | None] = mapped_column(Float, nullable=True)  # surface height, in the DSM's datum
+    source: Mapped[str] = mapped_column(String, default="detected")
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)  # target-pattern match, 0..1
+    size_m: Mapped[float | None] = mapped_column(Float, nullable=True)  # side length of the pattern matched
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    survey: Mapped[Survey] = relationship(back_populates="gcps")
 
 
 class ProcessingJob(Base):

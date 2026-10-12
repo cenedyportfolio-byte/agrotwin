@@ -18,7 +18,8 @@ SPZ v2 (Niantic) packing, from spz/src/cc/load-spz.cc:
   colors     u8 = f_dc * (0.15 * 255) + 127.5
   scales     u8 = (log_scale + 10) * 16
   rotations  u8 xyz = q * 127.5 + 127.5, q normalised with w >= 0
-  sh         u8 = round(c * 128) + 128, bucketed to 5 bits (degree 1) / 4 bits
+  sh         u8 = round(c * 128) + 128, bucketed to 5 bits (degree 1) / 4 bits,
+             coefficient-major (r, g, b per coefficient; PLY f_rest is channel-major)
   whole stream gzip-compressed
 
 Placement: identical to tile_splat.py (points recentred on the AABB midpoint,
@@ -115,8 +116,13 @@ def encode_spz(pos, f_dc, f_rest, opacity, log_scale, rot_wxyz) -> tuple[bytes, 
     rotations = _u8(q[:, 1:4] * 127.5 + 127.5)
 
     if sh_dim:
-        # coefficient-major (r,g,b per coefficient) — the order gsplat writes f_rest
-        raw = np.rint(f_rest * 128.0) + 128.0
+        # PLY f_rest is channel-major (all red coefficients, then green, then
+        # blue — gsplat's export_splats permutes (N, K, 3) -> (N, 3, K) like the
+        # reference 3DGS writer); SPZ wants coefficient-major (r, g, b per
+        # coefficient). Copying it through unchanged scrambled the
+        # view-dependent colour into pink/purple speckle in Cesium.
+        coef_major = f_rest.reshape(n, 3, sh_dim).transpose(0, 2, 1).reshape(n, sh_dim * 3)
+        raw = np.rint(coef_major * 128.0) + 128.0
         bucket = np.full(sh_dim * 3, 1 << (8 - SH_REST_BITS), np.float64)
         bucket[:9] = 1 << (8 - SH1_BITS)
         quant = np.floor((raw + bucket / 2) / bucket) * bucket
@@ -245,6 +251,8 @@ def main():
                     help="drop splats farther than this (m) from the survey centre horizontally (0 = keep all)")
     ap.add_argument("--prune-needles", action=argparse.BooleanOptionalAction, default=True,
                     help="drop near-vertical, highly elongated Gaussians (nadir-capture depth artefacts)")
+    ap.add_argument("--train-gsd-m", type=float, default=None,
+                    help="ground size of one training pixel; recorded so the viewer limits zoom to it")
     args = ap.parse_args()
 
     pos, f_dc, f_rest, opacity, scale, rot = read_ply(Path(args.ply))
@@ -305,7 +313,10 @@ def main():
         },
     }
     (out / "tileset.json").write_text(json.dumps(tileset, indent=1))
-    (out / "placement.json").write_text(json.dumps({"lon": lon, "lat": lat, "h": h, "lat0": args.lat0, "lon0": args.lon0, "h0": args.h0, "splats": len(pos)}, indent=2))
+    placement = {"lon": lon, "lat": lat, "h": h, "lat0": args.lat0, "lon0": args.lon0, "h0": args.h0, "splats": len(pos)}
+    if args.train_gsd_m:
+        placement["train_gsd_m"] = args.train_gsd_m
+    (out / "placement.json").write_text(json.dumps(placement, indent=2))
     print(f"Wrote {out / 'tileset.json'} + splat.glb ({(out / 'splat.glb').stat().st_size / 1e6:.1f} MB, SPZ)")
 
 

@@ -38,6 +38,12 @@ const nextConfig: NextConfig = {
     // them at 10 MB by default, which breaks multipart uploads.
     proxyClientMaxBodySize: "1gb",
     proxyTimeout: 600_000,
+    // Production builds hung the viewer at "Initializing viewer…": Cesium
+    // embeds its SPZ (splat) decoder as a template literal holding `\x000`,
+    // and the minifier rewrites that to `\00`, an octal escape that is a
+    // SyntaxError in template strings, so the Cesium chunk never loads. Dev
+    // builds are not minified; Cesium itself ships pre-minified anyway.
+    turbopackMinify: false,
   },
 };
 

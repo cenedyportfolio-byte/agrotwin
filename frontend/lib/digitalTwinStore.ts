@@ -16,7 +16,14 @@ export type LayerKey =
   | "dsm"
   | "pointCloud"
   | "vectorOverlays"
-  | "vegetationMask";
+  | "vegetationMask"
+  | "gcps"
+  | "bandGreen"
+  | "bandRed"
+  | "bandRedEdge"
+  | "bandNir"
+  | "falseColor"
+  | "alignmentCheck";
 
 type ShowKey =
   | "showFieldBoundary"
@@ -32,7 +39,14 @@ type ShowKey =
   | "showDsm"
   | "showPointCloud"
   | "showVectorOverlays"
-  | "showVegetationMask";
+  | "showVegetationMask"
+  | "showGcps"
+  | "showBandGreen"
+  | "showBandRed"
+  | "showBandRedEdge"
+  | "showBandNir"
+  | "showFalseColor"
+  | "showAlignmentCheck";
 
 interface DigitalTwinState extends Record<ShowKey, boolean> {
   mode: ViewMode;
@@ -62,6 +76,13 @@ const LAYER_STATE_KEY: Record<LayerKey, ShowKey> = {
   pointCloud: "showPointCloud",
   vectorOverlays: "showVectorOverlays",
   vegetationMask: "showVegetationMask",
+  gcps: "showGcps",
+  bandGreen: "showBandGreen",
+  bandRed: "showBandRed",
+  bandRedEdge: "showBandRedEdge",
+  bandNir: "showBandNir",
+  falseColor: "showFalseColor",
+  alignmentCheck: "showAlignmentCheck",
 };
 
 export const useDigitalTwinStore = create<DigitalTwinState>((set) => ({
@@ -88,6 +109,13 @@ export const useDigitalTwinStore = create<DigitalTwinState>((set) => ({
   showPointCloud: false,
   showVectorOverlays: true,
   showVegetationMask: false,
+  showGcps: true,
+  showBandGreen: false,
+  showBandRed: false,
+  showBandRedEdge: false,
+  showBandNir: false,
+  showFalseColor: false,
+  showAlignmentCheck: false,
 
   toggleLayer: (key) =>
     set((s) => {

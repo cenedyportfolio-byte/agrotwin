@@ -9,6 +9,7 @@ defusedxml>=0.7  # PIL needs this to read DJI's XMP block (gimbal/altitude/RTK f
 shapely>=2.0
 numpy>=1.26
 opencv-python-headless>=4.9
+scipy>=1.13  # weed_service (crop-row analysis) runs in every analysis
 
 # Optional geospatial raster support (manual import of orthomosaic/NDVI GeoTIFFs).
 # Ships its own GDAL wheel on Linux/Mac; install when raster import is needed.

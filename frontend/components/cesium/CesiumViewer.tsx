@@ -4,7 +4,7 @@ import type * as GeoJSON from "geojson";
 import { useEffect, useRef, useState } from "react";
 import { loadCesium } from "@/lib/loadCesium";
 import { createBasemapProvider, withTimeout } from "@/lib/basemap";
-import type { DetectionZone, SurveyImage } from "@/lib/types";
+import type { DetectionZone, GroundControlPoint, SurveyImage } from "@/lib/types";
 import { useDigitalTwinStore } from "@/lib/digitalTwinStore";
 import { CesiumScene } from "./CesiumScene";
 import { DetectionLayer } from "./DetectionLayer";
@@ -12,6 +12,7 @@ import { SurveyImageryLayer, type RasterAsset } from "./SurveyImageryLayer";
 import { SplatLayer, type SplatStatus } from "./SplatLayer";
 import { ModelLayer } from "./ModelLayer";
 import { VectorLayer, type VectorOverlay } from "./VectorLayer";
+import { GcpLayer, gcpAt } from "./GcpLayer";
 import type { MeshKind } from "@/lib/surveyAssets";
 
 export interface CursorPosition {
@@ -76,6 +77,14 @@ export interface CesiumViewerProps {
   gndvi?: RasterAsset | null;
   dsm?: RasterAsset | null;
   vegetationMask?: RasterAsset | null;
+  bandGreen?: RasterAsset | null;
+  bandRed?: RasterAsset | null;
+  bandRedEdge?: RasterAsset | null;
+  bandNir?: RasterAsset | null;
+  falseColor?: RasterAsset | null;
+  alignmentCheck?: RasterAsset | null;
+  /** Ground control targets found in the survey's photogrammetric orthophoto. */
+  gcps?: GroundControlPoint[];
   meshUrl?: string | null;
   /** "reality"/"imported": LOD-tiled tilesets (let Cesium pick LODs); "terrain": single-tile 2.5D fallback */
   meshKind?: MeshKind;
@@ -84,6 +93,9 @@ export interface CesiumViewerProps {
   surveyId?: string | null;
   initialCamera?: { lon: number; lat: number; height: number; heading: number; pitch: number } | null;
   onSelectDetection?: (id: string | null) => void;
+  /** A ground control target was clicked / tapped (null: somewhere else). */
+  onSelectGcp?: (id: string | null) => void;
+  selectedGcpId?: string | null;
   onSplatStatus?: (status: SplatStatus, detail?: string) => void;
   /** Mouse position over the globe (Advanced view coordinate readout). */
   onCursor?: (pos: CursorPosition | null) => void;
@@ -92,6 +104,7 @@ export interface CesiumViewerProps {
 }
 
 const NO_OVERLAYS: VectorOverlay[] = [];
+const NO_GCPS: GroundControlPoint[] = [];
 
 /** Owns only the Cesium Viewer lifecycle (init/cleanup — no memory leaks on
  * unmount) and composes the independent layer components. Client-side only;
@@ -108,6 +121,13 @@ export default function CesiumViewer({
   gndvi = null,
   dsm = null,
   vegetationMask = null,
+  bandGreen = null,
+  bandRed = null,
+  bandRedEdge = null,
+  bandNir = null,
+  falseColor = null,
+  alignmentCheck = null,
+  gcps = NO_GCPS,
   meshUrl = null,
   meshKind = "terrain",
   pointCloudUrl = null,
@@ -115,6 +135,8 @@ export default function CesiumViewer({
   surveyId = null,
   initialCamera = null,
   onSelectDetection,
+  onSelectGcp,
+  selectedGcpId = null,
   onSplatStatus,
   onCursor,
   onLayerError,
@@ -126,6 +148,12 @@ export default function CesiumViewer({
   const [status, setStatus] = useState("Initializing viewer…");
   // Terrain height (in the viewer's datum) of the field's ground plane.
   const [groundHeight, setGroundHeight] = useState<number | null>(null);
+  // The global terrain (or the ellipsoid when it is off / unreachable) and a flat
+  // ellipsoid for the Field Map, which is a top-down 2D map: looking straight
+  // down, the ~1 cm gaps between global-terrain tiles showed as dark seams across
+  // the photo (gone on the ellipsoid, and invisible at the 3D modes' tilted
+  // views), and 10-30 m relief adds nothing to a map of one field.
+  const terrainRef = useRef<{ global: unknown; flat: unknown } | null>(null);
   // The live reality-mesh tileset, so vegetation layers can drape onto it.
   const [meshTileset, setMeshTileset] = useState<any>(null);
 
@@ -144,6 +172,13 @@ export default function CesiumViewer({
   const showVectorOverlays = useDigitalTwinStore((s) => s.showVectorOverlays);
   const showWeedAreas = useDigitalTwinStore((s) => s.showWeedAreas);
   const showVegetationMask = useDigitalTwinStore((s) => s.showVegetationMask);
+  const showGcps = useDigitalTwinStore((s) => s.showGcps);
+  const showBandGreen = useDigitalTwinStore((s) => s.showBandGreen);
+  const showBandRed = useDigitalTwinStore((s) => s.showBandRed);
+  const showBandRedEdge = useDigitalTwinStore((s) => s.showBandRedEdge);
+  const showBandNir = useDigitalTwinStore((s) => s.showBandNir);
+  const showFalseColor = useDigitalTwinStore((s) => s.showFalseColor);
+  const showAlignmentCheck = useDigitalTwinStore((s) => s.showAlignmentCheck);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +222,7 @@ export default function CesiumViewer({
           selectionIndicator: false,
         });
 
+        terrainRef.current = { global: terrainProvider, flat: new Cesium.EllipsoidTerrainProvider() };
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1b3a2c");
         // Left off (default): the survey products are lifted onto the ~10-30 m
         // global terrain by a single sampled offset, so parts of them sit a
@@ -219,7 +255,9 @@ export default function CesiumViewer({
     if (!cesiumCtx || centerLat == null || centerLon == null) return;
     let cancelled = false;
     setGroundHeight(null);
-    sampleGroundHeight(cesiumCtx.Cesium, cesiumCtx.viewer.terrainProvider, centerLon, centerLat, boundary).then((h) => {
+    // always the global terrain: the Field Map may already have the flat globe on
+    const terrain = terrainRef.current?.global ?? cesiumCtx.viewer.terrainProvider;
+    sampleGroundHeight(cesiumCtx.Cesium, terrain, centerLon, centerLat, boundary).then((h) => {
       if (!cancelled) setGroundHeight(h);
     });
     return () => {
@@ -227,6 +265,15 @@ export default function CesiumViewer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cesiumCtx, centerLat, centerLon]);
+
+  const flatGround = mode === "field-map";
+  useEffect(() => {
+    const terrain = terrainRef.current;
+    if (!cesiumCtx || !terrain || cesiumCtx.viewer.isDestroyed()) return;
+    const { viewer, Cesium } = cesiumCtx;
+    const wanted = flatGround ? terrain.flat : terrain.global;
+    if (viewer.terrainProvider !== wanted) viewer.scene.setTerrain(new Cesium.Terrain(Promise.resolve(wanted)));
+  }, [cesiumCtx, flatGround]);
 
   // Coordinate readout: the globe/terrain point under the mouse.
   useEffect(() => {
@@ -245,20 +292,39 @@ export default function CesiumViewer({
       onCursor({
         lon: Cesium.Math.toDegrees(c.longitude),
         lat: Cesium.Math.toDegrees(c.latitude),
-        height: Number.isFinite(c.height) ? c.height : null,
+        // the flat Field Map globe has no terrain height to report
+        height: !flatGround && Number.isFinite(c.height) ? c.height : null,
       });
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
     return () => {
       handler.destroy();
       onCursor(null);
     };
-  }, [cesiumCtx, onCursor]);
+  }, [cesiumCtx, onCursor, flatGround]);
 
   const viewer = cesiumCtx?.viewer ?? null;
   const Cesium = cesiumCtx?.Cesium ?? null;
-  // Layers wait for the ground height so nothing is placed twice.
-  const ready = cesiumCtx !== null && groundHeight !== null;
-  const groundH = groundHeight ?? 0;
+  // Layers wait for the ground height so nothing is placed twice; on the flat
+  // Field Map globe the ground is the ellipsoid itself.
+  const ready = cesiumCtx !== null && (flatGround || groundHeight !== null);
+  const groundH = flatGround ? 0 : (groundHeight ?? 0);
+
+  // One click handler for everything selectable, so a click or tap selects one
+  // thing: a ground control target (on or near its point — gcpAt), otherwise
+  // the zone under it, otherwise nothing (which closes the open panel).
+  useEffect(() => {
+    if (!cesiumCtx || !ready || (!onSelectDetection && !onSelectGcp)) return;
+    const { viewer, Cesium } = cesiumCtx;
+    if (viewer.isDestroyed()) return;
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((click: any) => {
+      const gcpId = showGcps && onSelectGcp ? gcpAt(viewer, Cesium, gcps, groundH, click.position) : null;
+      const zoneId = gcpId ? null : viewer.scene.pick(click.position)?.id?.properties?.detectionId?.getValue?.();
+      onSelectGcp?.(gcpId);
+      onSelectDetection?.(zoneId ?? null);
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    return () => handler.destroy();
+  }, [cesiumCtx, ready, onSelectDetection, onSelectGcp, showGcps, gcps, groundH]);
   const photorealistic = mode === "photorealistic";
   // The mesh carries the orthophoto as its texture and sits on the ellipsoid:
   // flat globe drapes underneath it would only z-fight, so while it shows,
@@ -313,12 +379,24 @@ export default function CesiumViewer({
         gndvi={gndvi}
         dsm={dsm}
         vegetationMask={vegetationMask}
+        bandGreen={bandGreen}
+        bandRed={bandRed}
+        bandRedEdge={bandRedEdge}
+        bandNir={bandNir}
+        falseColor={falseColor}
+        alignmentCheck={alignmentCheck}
         showOrthomosaic={showOrthomosaic && !hideDrapes}
         showNdvi={showNdvi && !hideDrapes}
         showNdre={showNdre && !hideDrapes}
         showGndvi={showGndvi && !hideDrapes}
         showDsm={showDsm && !hideDrapes}
         showVegetationMask={showVegetationMask && !hideDrapes}
+        showBandGreen={showBandGreen && !hideDrapes}
+        showBandRed={showBandRed && !hideDrapes}
+        showBandRedEdge={showBandRedEdge && !hideDrapes}
+        showBandNir={showBandNir && !hideDrapes}
+        showFalseColor={showFalseColor && !hideDrapes}
+        showAlignmentCheck={showAlignmentCheck && !hideDrapes}
       />
       <SurveyImageryLayer
         viewer={viewer}
@@ -330,11 +408,23 @@ export default function CesiumViewer({
         ndre={ndre}
         gndvi={gndvi}
         dsm={dsm}
+        bandGreen={bandGreen}
+        bandRed={bandRed}
+        bandRedEdge={bandRedEdge}
+        bandNir={bandNir}
+        falseColor={falseColor}
+        alignmentCheck={alignmentCheck}
         showOrthomosaic={false}
         showNdvi={showNdvi && onMesh}
         showNdre={showNdre && onMesh}
         showGndvi={showGndvi && onMesh}
         showDsm={showDsm && onMesh}
+        showBandGreen={showBandGreen && onMesh}
+        showBandRed={showBandRed && onMesh}
+        showBandRedEdge={showBandRedEdge && onMesh}
+        showBandNir={showBandNir && onMesh}
+        showFalseColor={showFalseColor && onMesh}
+        showAlignmentCheck={showAlignmentCheck && onMesh}
       />
       <ModelLayer
         viewer={viewer}
@@ -375,7 +465,15 @@ export default function CesiumViewer({
         showWeedAreas={showWeedAreas}
         drape={!photorealistic}
         groundHeight={groundH}
-        onSelectDetection={onSelectDetection}
+      />
+      <GcpLayer
+        viewer={viewer}
+        Cesium={Cesium}
+        ready={ready}
+        gcps={gcps}
+        show={showGcps}
+        groundHeight={groundH}
+        selectedId={selectedGcpId}
       />
       <SplatLayer
         viewer={viewer}

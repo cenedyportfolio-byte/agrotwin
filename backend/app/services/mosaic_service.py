@@ -2,41 +2,52 @@
 built from the frames' own RTK positions and camera geometry.
 
 Each DJI frame is nadir (gimbal pitch ≈ -90°) and carries, in XMP, its
-RTK-fixed position (σ ≈ 2 cm here), altitude above takeoff, gimbal yaw and
-the calibrated focal length / optical centre. Under a flat-ground, nadir
+RTK-fixed position (σ ≈ 2 cm here), altitude above takeoff, gimbal yaw/roll
+and the calibrated focal length / optical centre. Under a flat-ground, nadir
 assumption a frame's pixel → ground mapping is a similarity transform:
 
     ground = camera_position + (AGL / f) · [ (u − cx)·right + (cy − v)·up ]
-    up    = heading(yaw)        = (sin yaw, cos yaw)   in (E, N)
-    right = heading(yaw + 90°)  = (cos yaw, −sin yaw)
+    up    = heading             = (sin h, cos h)   in (E, N)
+    right = heading + 90°       = (cos h, −sin h)
 
-Each RGB frame is first undistorted with DJI's DewarpData (Brown model:
-fx, fy, principal-point offset, k1 k2 p1 p2 k3 — the M3M RGB lens has ≈ −11 %
-radial distortion, over a metre of error at frame corners if ignored), then
-warped into a UTM grid and blended with strong centre weighting: only the
-inner ~70 % of each frame contributes (the flight's ~80 % overlap still
-covers everything) and weight falls off cubically towards it, so the nadir
-centre — the most accurate part of a frame — dominates. This is the same
-idea as DJI's "2D quick map": a continuous, correctly-placed field map that
-lines up with the RTK positions, without the terrain modelling, bundle
-adjustment and seam optimisation of true photogrammetry. Documented limits:
-- flat-ground assumption: relief and crop height shift pixels slightly and
-  seams show where adjacent frames disagree
+The heading is the gimbal yaw, turned 180° when the gimbal reports a 180°
+roll (see image_heading_deg): DJI flies the return legs of a mission that way.
+
+RGB frames are decoded at full resolution and sampled once per output pixel
+through DJI's DewarpData lens model (Brown: fx, fy, principal-point offset,
+k1 k2 p1 p2 k3 — the M3M RGB lens has ≈ −11 % radial distortion, over a metre
+at frame corners if ignored), so there is a single interpolation between the
+photo and the map. Overlaps are resolved winner-takes-all: every map pixel
+comes from the one frame that saw it closest to its principal point (the
+most nadir view, least relief displacement). Averaging overlapping frames
+instead draws every feature once per frame wherever the flat-ground
+placement disagrees, which reads as ghosting and blur. This is the same idea
+as DJI's "2D quick map": a continuous, correctly-placed field map that lines
+up with the RTK positions, without the terrain modelling, bundle adjustment
+and seam optimisation of true photogrammetry (scripts/import_odm.py brings
+that in). Documented limits:
+- flat-ground assumption: relief and crop height shift pixels slightly, so
+  features can break at the seam between two frames
 - AGL is altitude above the takeoff point, so a sloping field scales frames
   slightly differently across the field
-- RGB is blended photometrically only (no colour balancing across frames)
+- no colour balancing across frames
+- the NDVI/NDRE/GNDVI mosaics still blend overlaps (centre-weighted average):
+  the analysis reads them in 5 m cells, where averaging is the intent
 
 Outputs (registered as SurveyAssets, source="direct_georeferencing"):
   orthomosaic  uint8 RGB, nodata 0            data/surveys/<id>/outputs/orthomosaic_quick.tif
   ndvi/ndre/gndvi float32 index, nodata NaN   data/surveys/<id>/outputs/<index>_quick.tif
 """
 
+import functools
 import json
 import logging
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -51,10 +62,9 @@ log = logging.getLogger(__name__)
 
 
 def _torch_cuda():
-    """torch on a CUDA device, or None. Both hot loops here (lens undistortion
-    and the warp-and-accumulate) are per-pixel gathers — grid_sample on the GPU
-    does them far faster than the numpy/PIL path, which stays as the fallback
-    for machines without a GPU."""
+    """torch on a CUDA device, or None. The index mosaics' warp-and-accumulate
+    is a per-pixel gather — grid_sample on the GPU does it far faster than the
+    PIL path, which stays as the fallback for machines without a GPU."""
     try:
         import torch
     except ImportError:
@@ -62,18 +72,34 @@ def _torch_cuda():
     return torch if torch.cuda.is_available() else None
 
 
-RGB_GSD_M = 0.02  # output ground sample distance (metres/pixel); native ≈ 0.8 cm at 30 m AGL
+# The RGB grid follows the camera's native GSD (≈ 0.8 cm at 30 m AGL), floored
+# at 1 cm and coarsened further if the canvas would pass RGB_MAX_PIXELS
+# (uint8 RGB + float32 score = 7 bytes/pixel, ≈ 3.5 GB). The ODM orthophoto is
+# the full-detail product; this bound keeps a quick map of a big field in RAM.
+RGB_MIN_GSD_M = 0.01
+RGB_MAX_PIXELS = 500_000_000
+RENDER_STRIP_ROWS = 512  # rows of a frame's map window computed at once (bounds per-thread temporaries)
 INDEX_GSD_M = 0.05  # MS bands are 2592 px across ~45 m → ≈ 1.7 cm native
-RGB_DRAFT_MAX = 2640  # decode RGB JPGs at 1/2 (≈ 1.6 cm), enough to fill a 2 cm grid
 INDEX_MAX_DIM = 1296
 MIN_WEIGHT = 1e-3
+
+
+def image_heading_deg(yaw_deg: float, roll_deg: float | None) -> float:
+    """Compass bearing of the image's top edge. Looking straight down, gimbal
+    roll and yaw turn the image about the same axis (gimbal lock), and DJI
+    reports the return legs of a mission as the outbound yaw with a 180° roll:
+    on the Ditty Road M3M flight all 101 roll-180° frames have their SfM-solved
+    heading ≈ yaw + 180°, the 129 roll-0° frames ≈ yaw."""
+    if roll_deg is not None and abs(roll_deg) > 90:
+        return (yaw_deg + 180.0) % 360.0
+    return yaw_deg
 
 
 @dataclass
 class FrameGeom:
     east: float
     north: float
-    yaw_deg: float
+    heading_deg: float
     agl_m: float
     focal_px: float
     cx: float
@@ -107,71 +133,28 @@ def parse_dewarp(xmp: dict, width: int, height: int) -> "Dewarp | None":
     return Dewarp(fx, fy, width / 2 + cxo, height / 2 + cyo, k1, k2, p1, p2, k3)
 
 
-_REMAP_CACHE: dict[tuple, tuple[np.ndarray, np.ndarray]] = {}
+@functools.lru_cache(maxsize=16)
+def _fold_radius2(d: Dewarp) -> float:
+    """Squared normalised radius where the radial polynomial stops increasing.
+    Past it the model folds back and ideal points far outside the frame land
+    on real pixels (DJI M3M RGB: 1.23, vs 0.89 at the frame corner)."""
+    r = np.linspace(0.0, 3.0, 3001)
+    rd = r * (1 + d.k1 * r**2 + d.k2 * r**4 + d.k3 * r**6)
+    stop = np.flatnonzero(np.diff(rd) <= 0)
+    return float(r[stop[0]] ** 2) if stop.size else 9.0
 
 
-def _undistort_maps(d: Dewarp, w: int, h: int, scale: float):
-    """For each undistorted (output) pixel of the downsampled frame, where to
-    sample in the distorted (source) frame. Cached per camera + size."""
-    key = (d, w, h, round(scale, 6))
-    if key in _REMAP_CACHE:
-        return _REMAP_CACHE[key]
+def _distort(d: Dewarp, u: np.ndarray, v: np.ndarray, scale: float):
+    """Ideal-pinhole frame coordinates -> where the lens actually imaged them
+    (both in scaled continuous pixel coordinates), and where that is valid."""
     fx, fy, cx, cy = d.fx * scale, d.fy * scale, d.cx * scale, d.cy * scale
-    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-    x = (xs - cx) / fx
-    y = (ys - cy) / fy
+    x = (u - cx) / fx
+    y = (v - cy) / fy
     r2 = x * x + y * y
-    radial = 1 + d.k1 * r2 + d.k2 * r2**2 + d.k3 * r2**3
+    radial = 1 + r2 * (d.k1 + r2 * (d.k2 + r2 * d.k3))
     xd = x * radial + 2 * d.p1 * x * y + d.p2 * (r2 + 2 * x * x)
     yd = y * radial + d.p1 * (r2 + 2 * y * y) + 2 * d.p2 * x * y
-    maps = ((xd * fx + cx).astype(np.float32), (yd * fy + cy).astype(np.float32))
-    _REMAP_CACHE[key] = maps
-    return maps
-
-
-def _remap_bilinear_gpu(torch, img: np.ndarray, map_x: np.ndarray, map_y: np.ndarray):
-    """grid_sample equivalent of _remap_bilinear. Same zero-outside-source
-    semantics, same float32 output."""
-    h, w = img.shape[:2]
-    dev = "cuda"
-    t = torch.from_numpy(np.ascontiguousarray(img)).to(dev, torch.float32)
-    t = t.permute(2, 0, 1)[None] if t.ndim == 3 else t[None, None]
-    gx = torch.from_numpy(map_x).to(dev, torch.float32)
-    gy = torch.from_numpy(map_y).to(dev, torch.float32)
-    inside = (gx >= 0) & (gx < w - 1) & (gy >= 0) & (gy < h - 1)
-    # grid_sample wants normalised [-1, 1] coordinates
-    grid = torch.stack([gx / max(w - 1, 1) * 2 - 1, gy / max(h - 1, 1) * 2 - 1], dim=-1)[None]
-    out = torch.nn.functional.grid_sample(t, grid, mode="bilinear", padding_mode="zeros", align_corners=True)
-    out = out[0].permute(1, 2, 0) if img.ndim == 3 else out[0, 0]
-    out = torch.where(inside[..., None] if img.ndim == 3 else inside, out, torch.zeros((), device=dev))
-    return out.cpu().numpy(), inside.cpu().numpy()
-
-
-def _remap_bilinear(img: np.ndarray, map_x: np.ndarray, map_y: np.ndarray) -> np.ndarray:
-    h, w = img.shape[:2]
-    x0 = np.floor(map_x).astype(np.int32)
-    y0 = np.floor(map_y).astype(np.int32)
-    fx = (map_x - x0)[..., None] if img.ndim == 3 else (map_x - x0)
-    fy = (map_y - y0)[..., None] if img.ndim == 3 else (map_y - y0)
-    inside = (x0 >= 0) & (x0 < w - 1) & (y0 >= 0) & (y0 < h - 1)
-    x0c, y0c = np.clip(x0, 0, w - 2), np.clip(y0, 0, h - 2)
-    out = (
-        img[y0c, x0c] * (1 - fx) * (1 - fy)
-        + img[y0c, x0c + 1] * fx * (1 - fy)
-        + img[y0c + 1, x0c] * (1 - fx) * fy
-        + img[y0c + 1, x0c + 1] * fx * fy
-    )
-    out[~inside] = 0
-    return out.astype(np.float32), inside
-
-
-def undistort(img: np.ndarray, d: Dewarp, scale: float) -> tuple[np.ndarray, np.ndarray]:
-    h, w = img.shape[:2]
-    map_x, map_y = _undistort_maps(d, w, h, scale)
-    torch = _torch_cuda()
-    if torch is not None:
-        return _remap_bilinear_gpu(torch, img, map_x, map_y)
-    return _remap_bilinear(img, map_x, map_y)
+    return xd * fx + cx, yd * fy + cy, r2 < _fold_radius2(d)
 
 
 def utm_epsg_for(lon: float, lat: float) -> int:
@@ -200,26 +183,30 @@ def _frame_geometry(rows: list[models.SurveyImage], epsg: int, band: str) -> dic
         return {}
     xs, ys = _to_utm([r.lon for r in usable], [r.lat for r in usable], epsg)
     return {
-        r.frame_key or r.id: FrameGeom(x, y, r.gimbal_yaw_deg, r.rel_altitude_m, r.focal_px, r.cx_px, r.cy_px)
+        r.frame_key or r.id: FrameGeom(
+            x, y, image_heading_deg(r.gimbal_yaw_deg, r.gimbal_roll_deg),
+            r.rel_altitude_m, r.focal_px, r.cx_px, r.cy_px,
+        )
         for r, x, y in zip(usable, xs, ys)
     }
 
 
 def _with_dewarp(g: FrameGeom, xmp: dict, width: int, height: int) -> FrameGeom:
-    """After undistortion the frame is an ideal pinhole with the DewarpData
-    intrinsics, so georeference with those rather than the Calibrated* pair."""
+    """Once the lens distortion is modelled the frame is an ideal pinhole with
+    the DewarpData intrinsics, so georeference with those rather than the
+    Calibrated* pair."""
     d = parse_dewarp(xmp, width, height)
     if d is None:
         return g
-    return FrameGeom(g.east, g.north, g.yaw_deg, g.agl_m, (d.fx + d.fy) / 2, d.cx, d.cy, d)
+    return FrameGeom(g.east, g.north, g.heading_deg, g.agl_m, (d.fx + d.fy) / 2, d.cx, d.cy, d)
 
 
 def _pixel_to_ground_affine(g: FrameGeom, scale: float):
     """Affine (2x2 M, 2 t) mapping *downsampled* pixel (u, v) -> (E, N)."""
     gsd = g.agl_m / (g.focal_px * scale)  # metres per downsampled pixel
-    yaw = math.radians(g.yaw_deg)
-    up = np.array([math.sin(yaw), math.cos(yaw)])
-    right = np.array([math.cos(yaw), -math.sin(yaw)])
+    heading = math.radians(g.heading_deg)
+    up = np.array([math.sin(heading), math.cos(heading)])
+    right = np.array([math.cos(heading), -math.sin(heading)])
     cx, cy = g.cx * scale, g.cy * scale
     M = gsd * np.column_stack([right, -up])  # columns: d/du, d/dv
     t = np.array([g.east, g.north]) - M @ np.array([cx, cy])
@@ -365,49 +352,204 @@ def build_rgb_mosaic(survey: models.Survey, out_path: Path, epsg: int) -> dict |
     geoms = _frame_geometry(survey.images, epsg, "RGB")
     if len(geoms) < 3:
         return None
-    E0, N0, W, H = _grid_for(geoms, 1.0, RGB_GSD_M)
-    G, gt = _ground_to_grid(E0, N0, RGB_GSD_M)
+    native = float(np.median([g.agl_m / g.focal_px for g in geoms.values()]))
+    gsd = max(native, RGB_MIN_GSD_M)
+    E0, N0, W, H = _grid_for(geoms, 1.0, gsd)
+    if W * H > RGB_MAX_PIXELS:
+        gsd *= math.sqrt(W * H / RGB_MAX_PIXELS)
+        E0, N0, W, H = _grid_for(geoms, 1.0, gsd)
+    # JPEG decodes at 1/2, 1/4, 1/8 for free: take the smallest that still resolves the grid
+    reduce = max(k for k in (1, 2, 4, 8) if native * k <= gsd)
+    G, gt = _ground_to_grid(E0, N0, gsd)
     by_key = {(r.frame_key or r.id): r for r in survey.images if r.band == "RGB"}
-    # plain values only: the decode workers run on other threads
-    jobs = [(key, g, by_key[key].path, by_key[key].width, by_key[key].height, by_key[key].filename)
+    # plain values only: the render workers run on other threads
+    jobs = [(g, by_key[key].path, by_key[key].width, by_key[key].height, by_key[key].filename)
             for key, g in geoms.items()]
 
-    acc = _GpuMosaic.create(H, W, 3) or _CpuMosaic(H, W, 3)
-    log.info("rgb mosaic: %d frames into %dx%d @ %.0f cm on %s", len(jobs), W, H, RGB_GSD_M * 100, acc.device)
+    t0 = time.monotonic()
+    comp = _GpuCompositor.create(H, W)
+    device = comp.device if comp else "cpu (opencv)"
+    log.info("rgb mosaic: %d frames into %dx%d @ %.2f cm (native %.2f cm, decode 1/%d) on %s",
+             len(jobs), W, H, gsd * 100, native * 100, reduce, device)
+    if comp:
+        canvas, used = _composite_gpu(comp, jobs, reduce, G, gt)
+    else:
+        canvas, used = _composite_cpu(jobs, reduce, G, gt, H, W)
+    composite_s = time.monotonic() - t0
+    _write_geotiff(out_path, canvas, E0, N0, gsd, epsg, nodata=0)
+    log.info("rgb mosaic: composited in %.0f s, written in %.0f s", composite_s, time.monotonic() - t0 - composite_s)
+    return {"frames": used, "width": W, "height": H, "gsd_m": gsd, "native_gsd_m": native,
+            "decode_reduction": reduce, "device": device}
+
+
+def _composite_gpu(comp: "_GpuCompositor", jobs, reduce: int, G, gt) -> tuple[np.ndarray, int]:
+    """Frames are decoded on worker threads and resampled + merged in VRAM."""
     used = 0
-    for (key, g, path, width, height, filename), decoded in gpu.prefetch(jobs, lambda j: _decode_rgb_frame(j[2], j[3])):
+    for job, decoded in gpu.prefetch(jobs, lambda j: _decode_rgb_frame(j[1], j[2], reduce)):
         if isinstance(decoded, OSError):
-            log.warning("mosaic: skipping %s (%s)", filename, decoded)
+            log.warning("mosaic: skipping %s (%s)", job[4], decoded)
             continue
         img, scale, xmp = decoded
-        g = _with_dewarp(g, xmp, width or img.shape[1], height or img.shape[0])
-        M, t = _pixel_to_ground_affine(g, scale)
-        acc.add(img, M, t, G, gt, g.dewarp, scale)
+        g = _with_dewarp(job[0], xmp, job[2] or img.shape[1], job[3] or img.shape[0])
+        comp.add(img, g, scale, G, gt)
         used += 1
         if used % 100 == 0:
-            log.info("rgb mosaic: %d/%d frames", used, len(geoms))
-
-    out = acc.result_uint8()
-    _write_geotiff(out_path, out, E0, N0, RGB_GSD_M, epsg, nodata=0)
-    return {"frames": used, "width": W, "height": H, "gsd_m": RGB_GSD_M, "device": acc.device}
+            log.info("rgb mosaic: %d/%d frames", used, len(jobs))
+    return comp.result(), used
 
 
-def _decode_rgb_frame(path: Path, width: int | None):
-    """(uint8 HxWx3 frame at ~half resolution, scale vs full-res, DJI XMP), or the
-    OSError. Runs on a worker thread: the file is read once and the XMP comes
-    from the same open image."""
+def _composite_cpu(jobs, reduce: int, G, gt, H: int, W: int) -> tuple[np.ndarray, int]:
+    """Frames are decoded and resampled (OpenCV) on worker threads, merged here."""
+    def render(job):
+        g, path, width, height, _ = job
+        return _render_frame(g, path, width, height, reduce, G, gt, H, W)
+
+    canvas = np.zeros((H, W, 3), np.uint8)  # 0 = nodata
+    best = np.zeros((H, W), np.float32)  # nadir score of the frame each pixel came from
+    used = 0
+    workers = gpu.default_workers()
+    for job, rendered in gpu.prefetch(jobs, render, workers=workers, ahead=workers):
+        if isinstance(rendered, OSError):
+            log.warning("mosaic: skipping %s (%s)", job[4], rendered)
+            continue
+        used += 1
+        if rendered is not None:
+            c0, r0, c1, r1, pix, score = rendered
+            win = score > best[r0:r1, c0:c1]
+            np.copyto(best[r0:r1, c0:c1], score, where=win)
+            np.copyto(canvas[r0:r1, c0:c1], pix, where=win[..., None])
+        if used % 100 == 0:
+            log.info("rgb mosaic: %d/%d frames", used, len(jobs))
+    return canvas, used
+
+
+class _GpuCompositor:
+    """Winner-takes-all canvas in VRAM: uint8 RGB + float16 nadir score
+    (5 bytes/pixel, ≈ 2.2 GB for a 1 cm map of a 2 ha field). Same geometry and
+    selection as _render_frame + _composite_cpu, with grid_sample for the lookup."""
+
+    STRIP_ROWS = 1024
+    WORKSET_BYTES = 1_000_000_000  # one full-res frame as float32 + a strip of coordinate maps
+
+    def __init__(self, torch, H: int, W: int):
+        self.torch, self.H, self.W = torch, H, W
+        self.device = f"gpu ({torch.cuda.get_device_name(0)})"
+        self.canvas = torch.zeros((3, H, W), device="cuda", dtype=torch.uint8)
+        self.best = torch.zeros((H, W), device="cuda", dtype=torch.float16)
+
+    @classmethod
+    def create(cls, H: int, W: int) -> "_GpuCompositor | None":
+        torch = gpu.cuda_torch()
+        if torch is None or not gpu.gpu_can_hold(5 * H * W + cls.WORKSET_BYTES):
+            return None
+        try:
+            return cls(torch, H, W)
+        except torch.cuda.OutOfMemoryError:
+            gpu.release_gpu_memory()
+            return None
+
+    def add(self, img_u8: np.ndarray, g: FrameGeom, scale: float, G, gt) -> None:
+        torch = self.torch
+        ih, iw = img_u8.shape[:2]
+        M, t = _pixel_to_ground_affine(g, scale)
+        bounds = _patch_bounds(iw, ih, M, t, G, gt, self.H, self.W)
+        if bounds is None:
+            return
+        c0, r0, c1, r1, coeffs = bounds
+        a, b, c, d, e, f = (float(k) for k in coeffs)
+        src = torch.from_numpy(np.ascontiguousarray(img_u8)).to("cuda").permute(2, 0, 1)[None].float()
+        pcx, pcy = float(g.cx) * scale, float(g.cy) * scale
+        inv_half_diag = 1.0 / math.hypot(iw / 2, ih / 2)
+        xs = torch.arange(c1 - c0, device="cuda", dtype=torch.float32) + 0.5
+        for s0 in range(r0, r1, self.STRIP_ROWS):
+            s1 = min(s0 + self.STRIP_ROWS, r1)
+            ys = (torch.arange(s0 - r0, s1 - r0, device="cuda", dtype=torch.float32) + 0.5)[:, None]
+            u = a * xs + b * ys + c
+            v = d * xs + e * ys + f
+            sc = 2.0 - torch.hypot(u - pcx, v - pcy) * inv_half_diag
+            if g.dewarp is not None:
+                su, sv, ok = _distort(g.dewarp, u, v, scale)
+            else:
+                su, sv, ok = u, v, torch.ones_like(u, dtype=torch.bool)
+            su = su - 0.5
+            sv = sv - 0.5
+            ok = ok & (su >= 0) & (su <= iw - 1) & (sv >= 0) & (sv <= ih - 1)
+            grid = torch.stack([su * (2 / (iw - 1)) - 1, sv * (2 / (ih - 1)) - 1], dim=-1)[None]
+            pix = torch.nn.functional.grid_sample(src, grid, mode="bilinear", padding_mode="border",
+                                                  align_corners=True)[0]
+            pix = pix.round_().clamp_(1, 255).to(torch.uint8)  # 0 is nodata
+            best = self.best[s0:s1, c0:c1]
+            win = ok & (sc > best)
+            best.copy_(torch.where(win, sc, best.float()))
+            dst = self.canvas[:, s0:s1, c0:c1]
+            dst.copy_(torch.where(win, pix, dst))
+
+    def result(self) -> np.ndarray:
+        out = np.empty((self.H, self.W, 3), np.uint8)
+        for ch in range(3):  # one channel at a time keeps the host copy simple
+            out[..., ch] = self.canvas[ch].cpu().numpy()
+        del self.canvas, self.best
+        gpu.release_gpu_memory()
+        return out
+
+
+def _decode_rgb_frame(path: Path, width: int | None, reduce: int):
+    """(uint8 HxWx3 frame decoded at 1/reduce, scale vs full-res, DJI XMP), or
+    the OSError. The file is read once and the XMP comes from the same open image."""
     try:
         with ms.open_image_safely(path) as im:
             xmp = dji_xmp_from_image(im)
-            # the draft target must keep the frame's aspect: PIL only takes a
-            # 1/2 scale when *both* dimensions still cover the request, so a
-            # square target silently decodes 4:3 frames at full resolution
-            im.draft("RGB", (RGB_DRAFT_MAX, round(RGB_DRAFT_MAX * im.height / im.width)))
+            if reduce > 1:
+                # keep the frame's aspect: PIL only takes a 1/k scale when
+                # *both* dimensions still cover the request
+                im.draft("RGB", (im.width // reduce, im.height // reduce))
             im = im.convert("RGB")
             scale = im.size[0] / (width or im.size[0])
             return np.array(im), scale, xmp  # writable copy for torch.from_numpy
     except OSError as exc:
         return exc
+
+
+def _render_frame(g: FrameGeom, path: Path, width: int | None, height: int | None, reduce: int,
+                  G, gt, H: int, W: int):
+    """One frame resampled into its window of the output grid, on a worker
+    thread: (c0, r0, c1, r1, uint8 pixels, nadir score — 0 where the frame has
+    no data), None if it misses the grid, or the OSError."""
+    decoded = _decode_rgb_frame(path, width, reduce)
+    if isinstance(decoded, OSError):
+        return decoded
+    img, scale, xmp = decoded
+    ih, iw = img.shape[:2]
+    g = _with_dewarp(g, xmp, width or iw, height or ih)
+    M, t = _pixel_to_ground_affine(g, scale)
+    bounds = _patch_bounds(iw, ih, M, t, G, gt, H, W)
+    if bounds is None:
+        return None
+    c0, r0, c1, r1, coeffs = bounds
+    a, b, c, d, e, f = (float(k) for k in coeffs)  # python floats keep the maps float32
+    h, w = r1 - r0, c1 - c0
+    pix = np.empty((h, w, 3), np.uint8)
+    score = np.empty((h, w), np.float32)
+    pcx, pcy = float(g.cx) * scale, float(g.cy) * scale
+    inv_half_diag = 1.0 / math.hypot(iw / 2, ih / 2)
+    xs = np.arange(w, dtype=np.float32) + 0.5  # map pixel centres
+    for s0 in range(0, h, RENDER_STRIP_ROWS):
+        ys = (np.arange(s0, min(s0 + RENDER_STRIP_ROWS, h), dtype=np.float32) + 0.5)[:, None]
+        u = a * xs + b * ys + c  # ideal-pinhole frame coordinates of each map pixel
+        v = d * xs + e * ys + f
+        sc = 2.0 - np.hypot(u - pcx, v - pcy) * inv_half_diag  # higher = nearer the principal point
+        if g.dewarp is not None:
+            su, sv, ok = _distort(g.dewarp, u, v, scale)
+        else:
+            su, sv, ok = u, v, True
+        su = su - 0.5  # continuous coordinates -> pixel indices
+        sv = sv - 0.5
+        ok = ok & (su >= 0) & (su <= iw - 1) & (sv >= 0) & (sv <= ih - 1)
+        rows = slice(s0, s0 + ys.shape[0])
+        pix[rows] = cv2.remap(img, su, sv, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        score[rows] = np.where(ok, sc, 0)
+    np.maximum(pix, 1, out=pix)  # 0 is nodata
+    return c0, r0, c1, r1, pix, score
 
 
 def _patch_bounds(img_w: int, img_h: int, M, t, G, gt, H: int, W: int):
@@ -426,117 +568,6 @@ def _patch_bounds(img_w: int, img_h: int, M, t, G, gt, H: int, W: int):
     off = inv @ (np.array([c0, r0]) - b)
     coeffs = [inv[0, 0], inv[0, 1], off[0], inv[1, 0], inv[1, 1], off[1]]
     return c0, r0, c1, r1, coeffs
-
-
-class _CpuMosaic:
-    """Accumulator in host memory (the original path; per-frame work still
-    uses the GPU helpers when CUDA exists). Used when the canvas doesn't fit
-    in free GPU memory."""
-
-    def __init__(self, H: int, W: int, C: int):
-        self.device = "cpu canvas" + (" + gpu warp" if _torch_cuda() else "")
-        self.canvas = np.zeros((H, W, C), np.float32)
-        self.wsum = np.zeros((H, W), np.float32)
-
-    def add(self, img_u8, M, t, G, gt, dewarp, scale):
-        img = img_u8.astype(np.float32)
-        valid_src = None
-        if dewarp is not None:
-            img, valid_src = undistort(img, dewarp, scale)
-        _paste(self.canvas, self.wsum, img, M, t, G, gt, RGB_GSD_M, valid_src)
-
-    def result_uint8(self) -> np.ndarray:
-        valid = self.wsum > MIN_WEIGHT
-        out = np.zeros(self.canvas.shape, np.uint8)
-        out[valid] = np.clip(self.canvas[valid] / self.wsum[valid][:, None], 1, 255).astype(np.uint8)  # 0 = nodata
-        return out
-
-
-class _GpuMosaic:
-    """Canvas and weight sum live on the GPU for the whole build: each frame is
-    uploaded once (uint8), undistorted, weighted, warped and accumulated
-    there, and the finished mosaic is downloaded once. Same arithmetic as
-    _CpuMosaic (same grid_sample calls, same float32 weights)."""
-
-    def __init__(self, torch, H: int, W: int, C: int):
-        self.torch, self.H, self.W, self.C = torch, H, W, C
-        self.device = f"gpu ({torch.cuda.get_device_name(0)})"
-        self.canvas = torch.zeros((C, H, W), device="cuda", dtype=torch.float32)
-        self.wsum = torch.zeros((H, W), device="cuda", dtype=torch.float32)
-        self._maps: dict = {}
-        self._weights: dict = {}
-
-    @classmethod
-    def create(cls, H: int, W: int, C: int) -> "_GpuMosaic | None":
-        torch = gpu.cuda_torch()
-        if torch is None or not gpu.gpu_can_hold((C + 1) * H * W * 4):
-            return None
-        try:
-            return cls(torch, H, W, C)
-        except torch.cuda.OutOfMemoryError:
-            gpu.release_gpu_memory()
-            return None
-
-    def _undistort(self, t, d: Dewarp, scale: float):
-        torch = self.torch
-        h, w = t.shape[1:]
-        key = (d, w, h, round(scale, 6))
-        if key not in self._maps:
-            map_x, map_y = _undistort_maps(d, w, h, scale)
-            gx = torch.from_numpy(map_x).to("cuda")
-            gy = torch.from_numpy(map_y).to("cuda")
-            inside = (gx >= 0) & (gx < w - 1) & (gy >= 0) & (gy < h - 1)
-            grid = torch.stack([gx / max(w - 1, 1) * 2 - 1, gy / max(h - 1, 1) * 2 - 1], dim=-1)[None]
-            self._maps[key] = (grid, inside)
-        grid, inside = self._maps[key]
-        out = torch.nn.functional.grid_sample(t[None], grid, mode="bilinear", padding_mode="zeros", align_corners=True)[0]
-        return torch.where(inside, out, torch.zeros((), device="cuda")), inside
-
-    def _weight(self, w: int, h: int, inside):
-        if (w, h) not in self._weights:
-            self._weights[(w, h)] = self.torch.from_numpy(_weight_image(w, h)).to("cuda")
-        base = self._weights[(w, h)]
-        return base if inside is None else self.torch.where(inside, base, self.torch.zeros((), device="cuda"))
-
-    def add(self, img_u8, M, t, G, gt, dewarp, scale):
-        torch = self.torch
-        h, w = img_u8.shape[:2]
-        bounds = _patch_bounds(w, h, M, t, G, gt, self.H, self.W)
-        if bounds is None:
-            return
-        c0, r0, c1, r1, (a, b, c, d, e, f) = bounds
-        img = torch.from_numpy(np.ascontiguousarray(img_u8)).to("cuda").permute(2, 0, 1).to(torch.float32)
-        inside = None
-        if dewarp is not None:
-            img, inside = self._undistort(img, dewarp, scale)
-        weight = self._weight(w, h, inside)
-
-        ys, xs = torch.meshgrid(
-            torch.arange(r1 - r0, device="cuda", dtype=torch.float32),
-            torch.arange(c1 - c0, device="cuda", dtype=torch.float32),
-            indexing="ij",
-        )
-        u = a * xs + b * ys + c
-        v = d * xs + e * ys + f
-        grid = torch.stack([u / max(w - 1, 1) * 2 - 1, v / max(h - 1, 1) * 2 - 1], dim=-1)[None]
-        stack = torch.cat([img, weight[None]], dim=0)[None]
-        warped = torch.nn.functional.grid_sample(stack, grid, mode="bilinear", padding_mode="zeros", align_corners=True)[0]
-        patch, wpatch = warped[:-1], warped[-1]
-        wpatch = torch.where(wpatch > MIN_WEIGHT, wpatch, torch.zeros((), device="cuda"))
-        self.canvas[:, r0:r1, c0:c1] += patch * wpatch
-        self.wsum[r0:r1, c0:c1] += wpatch
-
-    def result_uint8(self) -> np.ndarray:
-        torch = self.torch
-        valid = self.wsum > MIN_WEIGHT
-        out = torch.zeros((self.H, self.W, self.C), device="cuda", dtype=torch.uint8)
-        for ch in range(self.C):  # one channel at a time keeps the temporaries small
-            val = (self.canvas[ch] / self.wsum).clamp(1, 255).to(torch.uint8)  # 0 = nodata
-            out[..., ch] = torch.where(valid, val, torch.zeros((), device="cuda", dtype=torch.uint8))
-        result = out.cpu().numpy()
-        del self.canvas, self.wsum, self._maps, self._weights, out
-        gpu.release_gpu_memory()
-        return result
 
 
 def build_index_mosaics(survey: models.Survey, out_dir: Path, epsg: int) -> dict[str, dict]:
@@ -593,7 +624,10 @@ def build_quick_mosaics(db: Session, survey: models.Survey) -> list[models.Surve
     """Builds the RGB and NDVI/NDRE/GNDVI quick mosaics and registers them as
     assets (replacing earlier direct_georeferencing outputs)."""
     from app.services.orthomosaic_service import extract_bounds_geojson
+    from app.services.survey_service import backfill_gimbal_roll
 
+    if n := backfill_gimbal_roll(db, survey):
+        log.info("mosaic: read gimbal roll for %d frames ingested before it was stored", n)
     anchors = [r for r in survey.images if r.lat is not None and r.lon is not None]
     if not anchors:
         return []

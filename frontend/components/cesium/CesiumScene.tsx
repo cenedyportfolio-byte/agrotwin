@@ -1,7 +1,7 @@
 "use client";
 
 import type * as GeoJSON from "geojson";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SurveyImage } from "@/lib/types";
 import type { ViewMode } from "@/lib/digitalTwinStore";
 import { healthColor } from "@/lib/colors";
@@ -10,9 +10,10 @@ export interface CesiumSceneProps {
   viewer: any;
   Cesium: any;
   ready: boolean;
-  /** The viewer exists. The camera flies to the field from this moment, with a
-   * provisional altitude until the ground height is known (`ready`), so a slow
-   * terrain service never leaves the user looking at the whole globe. */
+  /** The viewer exists. The opening globe spin starts from this moment, and the
+   * camera then flies down to the field with a provisional altitude if the
+   * ground height is still unknown (`ready`), so a slow terrain service never
+   * leaves the user looking at the whole globe. */
   cameraReady?: boolean;
   boundary: GeoJSON.Geometry | null;
   centerLat: number | null;
@@ -33,6 +34,34 @@ export interface CesiumSceneProps {
  * zones and raster overlays are separate layers (DetectionLayer,
  * SurveyImageryLayer) so each concern can evolve independently. */
 const PROVISIONAL_GROUND_M = 600;
+
+/** Opening: the whole Earth, turning eastward like the planet itself and
+ * easing to a stop with the field in the centre, then a flight down to the
+ * field. The spin waits for the globe's imagery (an untextured ball is not
+ * worth watching), up to GLOBE_WAIT_MS. Skipped for a deep-linked view and
+ * for reduced motion; a click or scroll during the spin goes straight down.
+ * Mode switches later fly directly. */
+const GLOBE_HEIGHT_M = 20_000_000;
+const GLOBE_SPIN_DEG = 40; // the field starts this far west of the view's centre
+const GLOBE_WAIT_MS = 4000;
+const GLOBE_SPIN_MS = 2500;
+const DESCENT_S = 4;
+const MODE_SWITCH_S = 1.2;
+
+type Intro = "globe" | "descent" | "done";
+
+/** Cesium moves the height linearly in (eased) flight time, so a descent from
+ * orbit spends most of its time high up and ends in a plunge. This easing
+ * changes the height by the same factor every moment — a steady zoom — and
+ * eases in and out. For flights between very different heights only. */
+function steadyZoom(startHeight: number, endHeight: number) {
+  const r = Math.max(endHeight, 1) / Math.max(startHeight, 1);
+  return (t: number) => (1 - Math.pow(r, t * t * (3 - 2 * t))) / (1 - r);
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
 
 export function CesiumScene({
   viewer,
@@ -55,6 +84,53 @@ export function CesiumScene({
   // for nearly all farmland, then the mode effect below re-flies to the exact
   // height (it depends on groundHeight) a moment later.
   const base = ready ? groundHeight : PROVISIONAL_GROUND_M;
+  const [intro, setIntro] = useState<Intro>(() => (initialCamera || prefersReducedMotion() ? "done" : "globe"));
+  const flight = useRef(0); // only the latest flight's end counts
+
+  useEffect(() => {
+    if (intro !== "globe" || !viewer || !Cesium || !cameraReady || viewer.isDestroyed()) return;
+    if (centerLat == null || centerLon == null) return;
+    const place = (k: number) =>
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(centerLon + GLOBE_SPIN_DEG * (1 - k), centerLat, GLOBE_HEIGHT_M),
+        orientation: { heading: 0, pitch: -Math.PI / 2, roll: 0 },
+      });
+    place(0);
+    // imagery loaded = the tile queue has filled and emptied again
+    let queued = false;
+    let loaded = false;
+    const removeProgress = viewer.scene.globe.tileLoadProgressEvent.addEventListener((n: number) => {
+      if (n > 0) queued = true;
+      else if (queued) loaded = true;
+    });
+    const opened = performance.now();
+    let start: number | null = null;
+    let frame = 0;
+    const spin = () => {
+      const now = performance.now();
+      if (start === null && (loaded || now - opened > GLOBE_WAIT_MS)) start = now;
+      const t = start === null ? 0 : Math.min(1, (now - start) / GLOBE_SPIN_MS);
+      place(1 - (1 - t) ** 3); // eases out to a stop over the field
+      if (t < 1) frame = requestAnimationFrame(spin);
+      else setIntro("descent");
+    };
+    frame = requestAnimationFrame(spin);
+    const skip = () => {
+      cancelAnimationFrame(frame);
+      place(1);
+      setIntro("done");
+    };
+    const canvas = viewer.scene.canvas as HTMLCanvasElement;
+    canvas.addEventListener("pointerdown", skip);
+    canvas.addEventListener("wheel", skip, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      removeProgress();
+      canvas.removeEventListener("pointerdown", skip);
+      canvas.removeEventListener("wheel", skip);
+    };
+  }, [intro, viewer, Cesium, cameraReady, centerLat, centerLon]);
+
   useEffect(() => {
     if (!viewer || !Cesium || !ready || viewer.isDestroyed()) return;
 
@@ -90,6 +166,7 @@ export function CesiumScene({
 
   useEffect(() => {
     if (!viewer || !Cesium || !cameraReady || viewer.isDestroyed() || centerLat == null || centerLon == null) return;
+    if (intro === "globe") return;
 
     if (initialCamera) {
       // a shared exact view needs the exact ground height
@@ -104,31 +181,37 @@ export function CesiumScene({
       });
       return;
     }
+    // the descent from the globe; afterwards (and once the exact ground height
+    // replaces the provisional one) a short flight
+    const id = ++flight.current;
+    const ended = () => {
+      if (id === flight.current && intro === "descent") setIntro("done");
+    };
+    const fly = (lon: number, lat: number, height: number, pitchDeg: number) => {
+      const from = viewer.camera.positionCartographic.height;
+      const steep = Math.max(from, height) > 10 * Math.max(Math.min(from, height), 1);
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(pitchDeg), roll: 0 },
+        duration: intro === "descent" ? DESCENT_S : MODE_SWITCH_S,
+        ...(steep ? { easingFunction: steadyZoom(from, height) } : {}),
+        complete: ended,
+        cancel: ended,
+      });
+    };
     if (mode === "3d-twin") {
       // ~300 m south of the centre at 350 m, looking down 50°: the whole
       // field fills the view with some perspective on the terrain mesh
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.0027, base + 350),
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-50), roll: 0 },
-        duration: 1.2,
-      });
+      fly(centerLon, centerLat - 0.0027, base + 350, -50);
     } else if (mode === "photorealistic") {
       // steep view from the south edge: nadir-only captures reconstruct the
       // ground well but look "needly" at grazing angles
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.0009, base + 330),
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-70), roll: 0 },
-        duration: 1.2,
-      });
+      fly(centerLon, centerLat - 0.0009, base + 330, -70);
     } else if (mode === "field-map") {
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, base + 350),
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-        duration: 1.2,
-      });
+      fly(centerLon, centerLat, base + 350, -90);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewer, Cesium, mode, cameraReady, ready, centerLat, centerLon, initialCamera, groundHeight]);
+  }, [viewer, Cesium, mode, cameraReady, ready, centerLat, centerLon, initialCamera, groundHeight, intro]);
 
   useEffect(() => {
     if (!viewer || !Cesium || !ready || viewer.isDestroyed()) return;

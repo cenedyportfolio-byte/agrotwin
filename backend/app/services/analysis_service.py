@@ -55,6 +55,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.services import gpu, multispectral_service
+from app.services.asset_sources import source_rank
 from app.services.vision_service import VEGETATION_THRESHOLD
 
 # ~5 m square footprint per frame sample (degrees at mid-latitude). Photos on
@@ -80,8 +81,6 @@ SAFE_ACTIONS = {
 }
 MODEL_ACTION = "Ground-check this model detection before acting on it"
 WEED_CANDIDATE_CONFIDENCE = 0.6  # inter-row vegetation is a candidate, not an identification
-
-SOURCE_RANK = {"photogrammetry_odm": 0, "direct_georeferencing": 1, "manual_import": 2}
 
 log = logging.getLogger(__name__)
 
@@ -268,7 +267,7 @@ def _analysis_raster(survey: models.Survey, multispectral: bool) -> tuple[Path, 
         a for a in survey.assets
         if a.asset_type == asset_type and (a.format or "").lower() in ("tif", "tiff") and a.path.exists()
     ]
-    best = min(candidates, key=lambda a: SOURCE_RANK.get(a.source, 3), default=None)
+    best = min(candidates, key=lambda a: source_rank(a.source), default=None)
     return (best.path, method) if best else None
 
 

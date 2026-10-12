@@ -31,6 +31,7 @@ class ImageMetadata:
     model: str | None
     gimbal_yaw_deg: float | None = None
     gimbal_pitch_deg: float | None = None
+    gimbal_roll_deg: float | None = None
     rel_altitude_m: float | None = None
     focal_px: float | None = None
     cx_px: float | None = None
@@ -134,6 +135,7 @@ def extract_image_metadata(path: Path) -> ImageMetadata:
             meta.lat, meta.lon = xlat, xlon
         meta.gimbal_yaw_deg = xmp_float(xmp, "GimbalYawDegree")
         meta.gimbal_pitch_deg = xmp_float(xmp, "GimbalPitchDegree")
+        meta.gimbal_roll_deg = xmp_float(xmp, "GimbalRollDegree")
         meta.rel_altitude_m = xmp_float(xmp, "RelativeAltitude")
         meta.focal_px = xmp_float(xmp, "CalibratedFocalLength")
         meta.cx_px = xmp_float(xmp, "CalibratedOpticalCenterX")

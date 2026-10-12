@@ -29,6 +29,13 @@ const ASSET_TYPE_LABEL: Record<string, string> = {
   dsm: "Elevation (DSM)",
   dtm: "Bare earth (DTM)",
   geojson: "Vector overlay (GeoJSON)",
+  band_green: "Green band (560 nm)",
+  band_red: "Red band (650 nm)",
+  band_red_edge: "Red Edge band (730 nm)",
+  band_nir: "NIR band (860 nm)",
+  false_color: "False colour (NIR·R·G)",
+  alignment_check: "Alignment check (NIR vs photo)",
+  vegetation_mask: "Vegetation mask",
   gnss_timestamp_mrk: "RTK timestamps (.MRK)",
   gnss_ppk_nav: "PPK navigation (.nav)",
   gnss_ppk_obs: "PPK observations (.obs)",
@@ -47,6 +54,10 @@ function describeSource(asset: { asset_type: string; source: string; bounds_geoj
       return "quick mosaic built from this survey's frames · georeferenced";
     case "photogrammetry_odm":
       return "true photogrammetry (OpenDroneMap) from this survey's frames";
+    case "photogrammetry_gpu":
+      return "band frames placed on the OpenDroneMap cameras and surface model (GPU) · lines up with the photo";
+    case "analysis":
+      return "from the analysis · georeferenced";
     case "photogrammetry":
       return "derived from the splat reconstruction";
     case "manual_import":

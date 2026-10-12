@@ -13,6 +13,12 @@ const SEVERITY_COLOR: Record<string, [number, number, number, number]> = {
 // weed candidates / model detections are a different kind of finding from
 // the cover tiers, so they get their own colour whatever their severity
 const WEED_COLOR: [number, number, number, number] = [168, 85, 247, 120];
+// Close up, a tinted fill hides the very photo it annotates: fade it out
+// between these heights above the ground; the outline stays.
+const FILL_FULL_ABOVE_M = 60;
+const FILL_GONE_BELOW_M = 15;
+// over the Photorealistic reconstruction the fill is only a hint, so it stays visible
+const RECONSTRUCTION_FILL_FACTOR = 0.35;
 
 export interface DetectionLayerProps {
   viewer: any;
@@ -28,10 +34,10 @@ export interface DetectionLayerProps {
   drape?: boolean;
   /** Terrain height of the field's ground plane (for the non-draped placement). */
   groundHeight?: number;
-  onSelectDetection?: (id: string | null) => void;
 }
 
-/** Renders AI/CV detection zones as clickable polygons and wires the pick handler. */
+/** Renders AI/CV detection zones as clickable polygons (each entity carries its
+ * detectionId; the click handler is CesiumViewer's, shared with the GCPs). */
 export function DetectionLayer({
   viewer,
   Cesium,
@@ -41,7 +47,6 @@ export function DetectionLayer({
   showWeedAreas = true,
   drape = true,
   groundHeight = 0,
-  onSelectDetection,
 }: DetectionLayerProps) {
   useEffect(() => {
     if (!viewer || !Cesium || !ready || viewer.isDestroyed()) return;
@@ -51,6 +56,15 @@ export function DetectionLayer({
       viewer.entities.removeById(`zone-outline-${d.id}`);
     }
 
+    const fade = { value: 1 };
+    const updateFade = () => {
+      const cam = viewer.camera.positionCartographic;
+      const above = cam.height - (viewer.scene.globe.getHeight(cam) ?? groundHeight);
+      fade.value = Math.min(Math.max((above - FILL_GONE_BELOW_M) / (FILL_FULL_ABOVE_M - FILL_GONE_BELOW_M), 0), 1);
+    };
+    updateFade();
+    const removeFadeListener = viewer.scene.preRender.addEventListener(updateFade);
+
     for (const d of detections) {
       const weed = isWeedZone(d.type);
       if (weed ? !showWeedAreas : !showProblemZones) continue;
@@ -58,7 +72,14 @@ export function DetectionLayer({
       const coords = (d.geometry as GeoJSON.Polygon).coordinates[0];
       const positions = coords.flatMap(([lon, lat]) => [lon, lat]);
       const [r, g, b, a] = weed ? WEED_COLOR : (SEVERITY_COLOR[d.severity] ?? SEVERITY_COLOR.medium);
-      const fill = Cesium.Color.fromBytes(r, g, b, a);
+      const base = Cesium.Color.fromBytes(r, g, b, a);
+      const fill = new Cesium.ColorMaterialProperty(
+        new Cesium.CallbackProperty((_time: unknown, result: unknown) => {
+          const c = Cesium.Color.clone(base, result);
+          c.alpha = base.alpha * fade.value * (drape ? 1 : RECONSTRUCTION_FILL_FACTOR);
+          return c;
+        }, false),
+      );
       const line = Cesium.Color.fromBytes(r, g, b, 255);
       if (drape) {
         // ground polygons cannot carry an outline, so it is a clamped polyline
@@ -96,20 +117,8 @@ export function DetectionLayer({
         });
       }
     }
+    return () => removeFadeListener();
   }, [viewer, Cesium, ready, detections, showProblemZones, showWeedAreas, drape, groundHeight]);
-
-  useEffect(() => {
-    if (!viewer || !Cesium || !ready || viewer.isDestroyed() || !onSelectDetection) return;
-
-    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((movement: any) => {
-      const picked = viewer.scene.pick(movement.position);
-      const id = picked?.id?.properties?.detectionId?.getValue?.();
-      onSelectDetection(id ?? null);
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-    return () => handler.destroy();
-  }, [viewer, Cesium, ready, onSelectDetection]);
 
   return null;
 }

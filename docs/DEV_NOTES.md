@@ -77,6 +77,20 @@ works, only slower). Measured on the 1,378-frame survey `8dab5067ab14`:
 | Row analysis (`weed_service`) | CPU (OpenCV/scipy) | 3.5 s | 2.8 s | identical metrics |
 | Vegetation mask | reuses the row analysis' read | 1.9 s | 0.1 s | identical raster |
 
+Added 2026-10-10 (laptop, RTX 3050 6 GB, survey cb0880056259, 230 M3M captures):
+
+| Stage | Runs on | Time |
+|---|---|---|
+| Band orthophotos (`band_ortho_service`): rig calibration, per-capture fit against the photo, DSM ray casting, lens model, winner-takes-all compositing, radiometric balancing, per-band co-registration onto the photo | GPU (torch); TIF decode on 6 threads | ~4 min incl. writing, 1.5 cm grid |
+| GCP target search (`gcp_service`): GCPs scanned at 2.5 cm, then the ~17 cm markers in 3000 px tiles at the orthophoto's own 0.8 cm | GPU scoring; orthophoto read on CPU | ~3.5 min (GCPs ~30 s) |
+| Tile pyramids for the band/index/composite layers | CPU threads (encoding) | minutes |
+
+The whole photo of the field is held on the GPU (2.5 cm, red + green) while
+the band products are built, so per-capture checks never touch the disk;
+the 1.5 cm band canvas is float16 (4 bands) + float16 off-nadir + int16
+winning-capture index, ~1.8 GB. `gpu_can_hold` coarsens the grid when that
+does not fit next to the 1.5 GB headroom.
+
 What stays on the CPU, and why:
 
 - **JPEG decode**: GeForce cards have no hardware JPEG decoder; nvJPEG
@@ -98,6 +112,14 @@ past it, tiles are re-read from disk.
 The Ollama LLM already runs 100% on the GPU. Gaussian-splat training
 (gsplat) and COLMAP dense/matching use CUDA; bundle adjustment would need a
 CUDA Ceres build (postponed with the rest of the 3D pipeline).
+
+## Linux: which Python runs the backend (2026-10-10)
+
+`run.sh` / `linux/run.sh` now pick the first Python whose torch sees CUDA:
+`AGROTWIN_PYTHON`, `backend/.venv-gpu`, `~/.venvs/agrotwin`, `backend/.venv`.
+Before, they took `backend/.venv` whenever `.venv-gpu` had no `bin/` (it is a
+Windows venv on this drive), and on 2026-10-10 that was a Linux venv without
+torch: every mosaic and analysis job started from the app ran on the CPU.
 
 ## Cesium: no Ion token
 

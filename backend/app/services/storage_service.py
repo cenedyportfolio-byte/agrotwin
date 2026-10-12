@@ -7,6 +7,7 @@ copied, since raw survey folders can be tens of gigabytes.
 """
 
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -30,27 +31,36 @@ def write_atomic(path: Path, data: bytes) -> None:
         raise
 
 
-# Stored paths are absolute. When the project or the survey drive is mounted
-# somewhere else (another machine, /media/<user>/…), re-root them: anything
-# under an "agrotwin/" folder maps onto this checkout, anything under the raw
-# survey folder ("Development/Agro/") onto settings.raw_data_root.
-_REROOTS = (("/agrotwin/", AGROTWIN_ROOT), ("/Development/Agro/", None))
+# Stored paths are absolute and may come from another machine or OS
+# (D:\argoTwinv2\…, /media/<user>/…/agrotwin/…). Re-root them: anything under
+# the project folder maps onto this checkout, anything under the raw survey
+# folder ("Development/Agro/") or inside a DJI mission folder onto
+# settings.raw_data_root.
+_DJI_TAIL = re.compile(r"/(DJI_[^/]+/[^/]+)$")
+
+
+def _reroots() -> tuple[tuple[str, Path], ...]:
+    return (
+        ("/agrotwin/", AGROTWIN_ROOT),
+        (f"/{AGROTWIN_ROOT.name}/", AGROTWIN_ROOT),
+        ("/Development/Agro/", settings.raw_data_root),
+    )
 
 
 def resolve_path(file_path: str) -> Path:
     """Prefers this checkout's own copy of a file over the stored location, so
-    a project copied to another drive uses its local data even while the
+    a project copied to another drive or OS uses its local data even while the
     original still exists."""
-    p = Path(file_path)
-    s = p.as_posix()
-    for marker, root in _REROOTS:
+    s = str(file_path).replace("\\", "/")  # a Windows path is not split on "\" elsewhere
+    for marker, base in _reroots():
         if marker in s:
-            base = root if root is not None else settings.raw_data_root
             cand = base / s.split(marker, 1)[1]
             if cand.exists():
                 return cand
-            break
-    return p
+    m = _DJI_TAIL.search(s)
+    if m and (cand := settings.raw_data_root / m.group(1)).exists():
+        return cand
+    return Path(file_path)
 
 
 def file_exists(file_path: str) -> bool:

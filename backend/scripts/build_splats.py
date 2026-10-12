@@ -414,6 +414,25 @@ def run_train(proj: Path, steps: int):
     return ply
 
 
+def training_gsd_m(proj: Path) -> float | None:
+    """Ground size of one training-image pixel at the flight's median height:
+    the finest detail the model was fitted to. The viewer stops zooming there."""
+    import statistics
+
+    import pycolmap
+
+    cams = pycolmap.Reconstruction(str(proj / "colmap-workspace" / "undistorted" / "sparse")).cameras
+    con = sqlite3.connect(DB_PATH)
+    agl = [r[0] for r in con.execute(
+        "SELECT rel_altitude_m FROM survey_images WHERE survey_id=? AND band='RGB' AND rel_altitude_m > 0",
+        (proj.name,),
+    )]
+    con.close()
+    if not cams or not agl:
+        return None
+    return statistics.median(agl) / next(iter(cams.values())).focal_length_x
+
+
 def run_tile(proj: Path, ply: Path, meta: dict):
     out = PUBLIC_SPLATS / proj.name
     cmd = [
@@ -422,6 +441,9 @@ def run_tile(proj: Path, ply: Path, meta: dict):
         "--lon0", f"{meta['lon0']:.8f}", "--lat0", f"{meta['lat0']:.8f}", "--h0", f"{meta['h0']:.2f}",
         "--yaw-deg", "0", "--min-opacity", "0.12", "--max-scale", "1.5", "--max-radius", "100",
     ]
+    gsd = training_gsd_m(proj)
+    if gsd:
+        cmd += ["--train-gsd-m", f"{gsd:.4f}"]
     print("Tile:", " ".join(cmd))
     subprocess.run(cmd, check=True)
     print(f"Tileset ready: {out / 'tileset.json'}")

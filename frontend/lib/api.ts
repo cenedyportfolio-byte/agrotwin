@@ -5,6 +5,7 @@ import type {
   FieldBoundaryResponse,
   FieldOut,
   FieldSummary,
+  GroundControlPoint,
   ProcessingJob,
   Survey,
   SurveyAsset,
@@ -94,6 +95,7 @@ export const api = {
     request<SurveyAvailability>(`/api/surveys/${surveyId}/availability`),
   getFieldBoundary: (surveyId: string) =>
     request<FieldBoundaryResponse>(`/api/surveys/${surveyId}/field-boundary`),
+  listGcps: (surveyId: string) => request<GroundControlPoint[]>(`/api/surveys/${surveyId}/gcps`),
 
   getAnalysis: (surveyId: string) => request<AnalysisResult>(`/api/analysis/${surveyId}`),
   askAssistant: (surveyId: string, question: string) =>

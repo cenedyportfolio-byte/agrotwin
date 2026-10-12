@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.services import import_service, job_runner, multispectral_service, processing_service, storage_service
+from app.services import (
+    gcp_service,
+    import_service,
+    job_runner,
+    multispectral_service,
+    processing_service,
+    storage_service,
+)
 from app.services.metadata_service import extract_image_metadata
 from app.services.survey_service import camera_fields, classify_uploaded_file
 
@@ -390,6 +397,12 @@ def get_survey_availability(survey_id: str, db: Session = Depends(get_db)):
         dsm="dsm" in asset_types,
         vector_overlays="geojson" in asset_types,
     )
+
+
+@router.get("/{survey_id}/gcps", response_model=list[schemas.GroundControlPointOut])
+def list_ground_control_points(survey_id: str, db: Session = Depends(get_db)):
+    """The survey's ground control targets and markers (found in its photogrammetric orthophoto)."""
+    return sorted(_get_survey(db, survey_id).gcps, key=gcp_service.sort_key)
 
 
 @router.get("/{survey_id}/field-boundary")

@@ -16,10 +16,14 @@ DATA_DIR = AGROTWIN_ROOT / "data"
 def _default_raw_data_root() -> Path:
     """Folder holding the DJI mission folders. When the project lives on the
     survey drive (…/Agro/agrotwin) that is simply the parent folder, so the
-    whole drive can move between machines / mount points."""
+    whole drive can move between machines / mount points. Also checks this
+    checkout's own Data/ folder, where mission folders can be dropped directly."""
     parent = AGROTWIN_ROOT.parent
     if any(parent.glob("DJI_*")):
         return parent
+    project_data = AGROTWIN_ROOT / "Data"
+    if any(project_data.glob("DJI_*")):
+        return project_data
     return Path("/media/cdev/Personal1/Development/Agro")
 
 

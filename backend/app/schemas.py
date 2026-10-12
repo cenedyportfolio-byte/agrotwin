@@ -101,6 +101,18 @@ class SurveyAssetOut(BaseModel):
     created_at: datetime
 
 
+class GroundControlPointOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    lat: float
+    lon: float
+    height_m: float | None = None
+    source: str
+    score: float | None = None
+    size_m: float | None = None
+
+
 class SurveyAssetsAvailability(BaseModel):
     rgb_images: bool
     gps_metadata: bool
