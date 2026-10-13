@@ -1,0 +1,16 @@
+[Unit]
+Description=AgroTwin web app (Next.js)
+After=network-online.target agrotwin-api.service
+Wants=network-online.target
+
+[Service]
+User=agrotwin
+Group=agrotwin
+WorkingDirectory=/opt/agrotwin/frontend
+EnvironmentFile=/etc/agrotwin/agrotwin.env
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

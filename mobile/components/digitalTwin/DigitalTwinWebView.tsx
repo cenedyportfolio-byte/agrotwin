@@ -6,6 +6,8 @@ import { immersive } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { ApiError } from "@/services/errors";
 import { getWebViewerUrl } from "@/services/runtimeConfig";
+import { signedViewerUrl } from "@/services/auth";
+import { useAuth } from "@/providers/AuthProvider";
 import { ErrorState, AppText } from "@/components/ui";
 import {
   buildViewerUrl,
@@ -67,6 +69,20 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
     () => (webBase ? buildViewerUrl(webBase, { fieldId, surveyId, mode, focusZoneId }) : null),
     [webBase, fieldId, surveyId, mode, focusZoneId]
   );
+  // the WebView has its own cookies: sign it in with a one-time code first
+  const { isAuthenticated } = useAuth();
+  const [startUrl, setStartUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!url) return undefined;
+    let alive = true;
+    setStartUrl(null);
+    signedViewerUrl(url, isAuthenticated)
+      .then((u) => alive && setStartUrl(u))
+      .catch((err) => alive && setError(err));
+    return () => {
+      alive = false;
+    };
+  }, [url, isAuthenticated, attempt]);
 
   const send = useCallback((message: HostToViewerMessage) => {
     webRef.current?.injectJavaScript(hostMessageScript(message));
@@ -140,12 +156,20 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
     );
   }
 
+  if (!startUrl) {
+    return (
+      <View style={[styles.fill, frame, styles.center, { backgroundColor: immersive.bg }]}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.fill, frame]}>
       <WebView
         key={attempt}
         ref={webRef}
-        source={{ uri: url }}
+        source={{ uri: startUrl }}
         style={[styles.fill, { backgroundColor: immersive.bg }]}
         originWhitelist={["http://*", "https://*"]}
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
@@ -187,6 +211,7 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  center: { alignItems: "center", justifyContent: "center" },
   overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", gap: 12, padding: 24 },
   hint: { textAlign: "center", paddingHorizontal: 40 },
 });

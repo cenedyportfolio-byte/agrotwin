@@ -158,7 +158,26 @@ Roadmap phases per the original spec, and what's actually done.
       saying what to export instead. Imports are served by the API from
       `data/surveys/<id>/imports/<asset>/`.
 
+- [x] Farmer release (2026-10-13), for US farmers on phones, served from a
+      university GPU server:
+      **accounts** — admin / operator / farmer, a farmer sees only their own
+      farm (`app/auth.py`; other farms' surveys answer 404, their map files
+      403 through nginx `auth_request`); **phone screens in plain words** —
+      acres, health shares explained (relative to the field's best parts),
+      "spots to check" ranked by severity × size with where and how big, zone
+      advice for walking the field, plain step names and errors (the technical
+      cause for staff only), a flight guide, upload with retries and a
+      no-GPS check; **detailed maps automatically** — OpenDroneMap in Docker
+      after every quick map, on its own worker, resumed after a restart
+      (`odm_service.py`); **deployment kit** — `deploy/` (systemd, nginx +
+      https, nightly DB backup, Ollama, first admin).
+
 ## Still open (honest gaps, not hidden)
+
+- Uploading a whole flight from a phone needs the upload screen open (the
+  website cannot upload in the background, and neither can the app yet —
+  that needs a background upload task in a native build, tested on devices)
+  and the photos on the phone (SD card reader / Files app).
 
 - No trained weed/disease/pest model is installed — the detector plug-in and
   the tiled inference runner exist, but a model needs labelled imagery of

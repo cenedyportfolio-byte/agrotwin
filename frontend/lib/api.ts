@@ -11,12 +11,35 @@ import type {
   SurveyAsset,
   SurveyAvailability,
   SurveyImage,
+  User,
+  UserRole,
 } from "@/lib/types";
+
+// a wrong password at sign-in is a 401 too, but means "try again", not "signed out"
+const NO_SIGN_IN_REDIRECT = ["/api/auth/login"];
+
+/** Signed out (or the session ran out): back to the sign-in page, then here. */
+function toSignIn(path: string) {
+  if (typeof window === "undefined" || NO_SIGN_IN_REDIRECT.includes(path)) return;
+  if (window.location.pathname === "/login") return;
+  const next = window.location.pathname + window.location.search;
+  // a full load on purpose: nothing cached for the old session survives
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+}
+
+/** An error answer from the backend, with its HTTP status (a network failure is a plain Error). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 // next.config.ts rewrites /api/* to the FastAPI backend, so plain relative
 // paths work from both the browser and (during SSR) the Next.js server.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
+  if (res.status === 401) toSignIn(path);
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -25,7 +48,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // response body wasn't JSON
     }
-    throw new Error(detail || `Request failed (${res.status})`);
+    throw new ApiError(detail || `Request failed (${res.status})`, res.status);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -49,12 +72,33 @@ export function isJobActive(job: ProcessingJob | null | undefined): boolean {
 }
 
 export const api = {
+  // --- sign-in and accounts ---
+  login: (email: string, password: string) =>
+    postJson<{ user: User; token: string }>("/api/auth/login", { email, password }),
+  logout: () => postJson<{ signed_out: boolean }>("/api/auth/logout", {}),
+  me: () => request<User>("/api/auth/me"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    postJson<{ changed: boolean }>("/api/auth/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  listUsers: () => request<User[]>("/api/users"),
+  listFarmers: () => request<User[]>("/api/users/farmers"),
+  createUser: (user: { email: string; name?: string; role: UserRole; password: string }) =>
+    postJson<User>("/api/users", user),
+  updateUser: (userId: string, patch: { name?: string; role?: UserRole; is_active?: boolean; password?: string }) =>
+    request<User>(`/api/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+
   listFields: () => request<FieldSummary[]>("/api/fields"),
   getField: (fieldId: string) => request<FieldSummary>(`/api/fields/${fieldId}`),
-  createField: (name: string, cropType: string) =>
-    postJson<FieldOut>("/api/fields", { name, crop_type: cropType }),
+  createField: (name: string, cropType: string, ownerId?: string) =>
+    postJson<FieldOut>("/api/fields", { name, crop_type: cropType, owner_id: ownerId }),
   deleteField: (fieldId: string) => request<{ deleted: string }>(`/api/fields/${fieldId}`, { method: "DELETE" }),
-  updateField: (fieldId: string, patch: { name?: string; crop_type?: string }) =>
+  updateField: (fieldId: string, patch: { name?: string; crop_type?: string; owner_id?: string }) =>
     request<FieldSummary>(`/api/fields/${fieldId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -88,6 +132,7 @@ export const api = {
   // These queue background jobs (HTTP 202) — poll getJob for progress.
   triggerProcessing: (surveyId: string) => postJson<ProcessingJob>(`/api/surveys/${surveyId}/process`, undefined),
   rebuildMosaic: (surveyId: string) => postJson<ProcessingJob>(`/api/surveys/${surveyId}/mosaic`, undefined),
+  makeDetailedMap: (surveyId: string) => postJson<ProcessingJob>(`/api/surveys/${surveyId}/detailed`, undefined),
   recomputeAnalysis: (surveyId: string) => postJson<ProcessingJob>(`/api/analysis/${surveyId}/recompute`, undefined),
   getJob: (surveyId: string) => request<ProcessingJob | null>(`/api/surveys/${surveyId}/job`),
 

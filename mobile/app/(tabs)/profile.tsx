@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
-import { Building2, CircleHelp, Cog, Layers, Upload, Wifi } from "lucide-react-native";
+import { Building2, CircleHelp, Cog, Layers, LogOut, Upload, Wifi } from "lucide-react-native";
 import { iconStroke, layout } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/providers/AuthProvider";
@@ -31,7 +31,7 @@ function initials(name: string): string {
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { userName } = useAuth();
+  const { user, signOut } = useAuth();
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const advanced = useSettingsStore((s) => s.advancedMode);
@@ -44,7 +44,7 @@ export default function ProfileScreen() {
     const ha = list.reduce((sum, f) => sum + (f.area_hectares ?? 0), 0);
     return { count: list.length, ha };
   }, [fields.data]);
-  const name = userName ?? "Farmer";
+  const name = user?.name ?? user?.email ?? "Farmer";
   const serverHost = urls.apiUrl ? urls.apiUrl.replace(/^https?:\/\//, "") : "Not set";
 
   return (
@@ -64,7 +64,9 @@ export default function ProfileScreen() {
             {name}
           </AppText>
           <AppText variant="caption" tone="muted">
-            {fields.isPending ? "Loading fields…" : `AgroTwin · ${farm.ha.toFixed(1)} ha · ${farm.count} ${farm.count === 1 ? "field" : "fields"}`}
+            {fields.isPending
+              ? "Loading fields…"
+              : `${user?.email ?? "AgroTwin"} · ${(farm.ha * 2.47105).toFixed(1)} acres · ${farm.count} ${farm.count === 1 ? "field" : "fields"}`}
           </AppText>
         </View>
       </Blueprint>
@@ -83,18 +85,27 @@ export default function ProfileScreen() {
         <ListGroup>
           <ListRow
             icon={<Wifi size={20} color={colors.accent} strokeWidth={iconStroke} />}
-            label="AgroTwin computer"
+            label="AgroTwin server"
             note={serverHost}
             onPress={() => router.push("/settings")}
             right={
               test.isSuccess ? <StatusBadge tier="healthy" label="Connected" /> : test.isError ? <StatusBadge tier="problem" label="Unreachable" /> : undefined
             }
           />
-          <ListRow icon={<Building2 size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Fields" note={`${farm.count} ${farm.count === 1 ? "field" : "fields"} on this server`} onPress={() => router.push("/(tabs)/fields")} />
-          <ListRow icon={<Upload size={20} color={colors.accent} strokeWidth={iconStroke} />} label="New survey" note="Upload a small flight or import results" onPress={() => router.push("/upload")} />
+          <ListRow icon={<Building2 size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Fields" note={`${farm.count} ${farm.count === 1 ? "field" : "fields"}`} onPress={() => router.push("/(tabs)/fields")} />
+          <ListRow icon={<Upload size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Upload a flight" note="Photos from the drone's memory card" onPress={() => router.push("/upload")} />
           <ListRow icon={<Layers size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Detail level" note={advanced ? "Advanced — methods and technical names shown" : "Simple — farmer wording"} onPress={() => router.push("/settings")} />
           <ListRow icon={<CircleHelp size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Help & support" note="Setup and troubleshooting in mobile/README.md" onPress={() => router.push("/settings")} />
-          <ListRow icon={<Cog size={20} color={colors.accent} strokeWidth={iconStroke} />} label="About" note={`AgroTwin Mobile ${Constants.expoConfig?.version ?? ""} · local, no cloud`} last />
+          <ListRow icon={<Cog size={20} color={colors.accent} strokeWidth={iconStroke} />} label="About" note={`AgroTwin Mobile ${Constants.expoConfig?.version ?? ""}`} />
+          <ListRow
+            icon={<LogOut size={20} color={colors.accent} strokeWidth={iconStroke} />}
+            label="Sign out"
+            note={user ? `Signed in as ${user.email}` : undefined}
+            onPress={() => {
+              void signOut().then(() => router.replace("/login"));
+            }}
+            last
+          />
         </ListGroup>
       </View>
 

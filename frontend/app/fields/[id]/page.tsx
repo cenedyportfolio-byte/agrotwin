@@ -10,8 +10,12 @@ import { MethodBadge, MockDataBadge } from "@/components/dashboard/StatusPill";
 import { Globe2, ArrowRight, Trash2, Loader2, UploadCloud, Pencil, Check, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useMe } from "@/lib/useMe";
+import { CROP_TYPES, describeZone, flightStatusLabel, formatArea, sortSpots } from "@/lib/farm";
+import { HealthBar } from "@/components/dashboard/HealthBar";
+import { SpotList } from "@/components/dashboard/SpotList";
+import type { FieldSummary } from "@/lib/types";
 
-const CROP_TYPES = ["soybean", "corn", "wheat", "cotton", "rice", "sorghum", "canola", "sunflower", "potato", "other"];
 
 export default function FieldDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -22,6 +26,12 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
   const { data: surveys } = useQuery({
     queryKey: ["field-surveys", id],
     queryFn: () => api.listFieldSurveys(id),
+  });
+  const { data: analysis } = useQuery({
+    queryKey: ["analysis", field?.latest_survey_id],
+    queryFn: () => api.getAnalysis(field?.latest_survey_id as string),
+    enabled: !!field?.latest_survey_id,
+    retry: false,
   });
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -97,8 +107,9 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
                 )}
               </h1>
               {field?.area_hectares != null && (
-                <p className="text-muted-foreground mt-1 text-xs sm:text-sm">{field.area_hectares} ha</p>
+                <p className="text-muted-foreground mt-1 text-xs sm:text-sm">{formatArea(field.area_hectares)}</p>
               )}
+              {field && <OwnerPicker field={field} />}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
@@ -106,14 +117,14 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
               href={`/fields/${id}/digital-twin`}
               className={buttonVariants({ size: "sm", className: "sm:h-10 sm:px-4 sm:py-2 text-xs sm:text-sm bg-brand hover:bg-brand/90 text-white" })}
             >
-              <Globe2 size={16} /> Open Digital Twin
+              <Globe2 size={16} /> Open field map
             </Link>
             <Button
               variant="outline"
               size="sm"
               className="sm:h-10 sm:px-3 sm:py-2 text-xs sm:text-sm text-muted-foreground hover:text-problem"
               onClick={() => {
-                if (window.confirm(`Delete "${field?.name}" and all of its surveys? Original drone files on disk are kept.`))
+                if (window.confirm(`Delete "${field?.name}" and all of its flights? This cannot be undone.`))
                   remove.mutate();
               }}
               disabled={remove.isPending}
@@ -127,32 +138,37 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
         {save.isError && <div className="text-sm text-problem">{(save.error as Error).message}</div>}
 
         {field?.healthy_area_percent != null && (
-          <div className="rounded-xl border border-border bg-surface p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-sm">Field Health</h2>
+          <div className="rounded-xl border border-border bg-surface p-4 sm:p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold text-sm">Crop health — latest flight</h2>
               <div className="flex items-center gap-2">
                 <MethodBadge method={field.analysis_method} />
                 {field.analysis_is_mock && <MockDataBadge />}
               </div>
             </div>
-            <div className="flex h-2 w-full overflow-hidden rounded-full bg-surface-2">
-              <div className="bg-healthy" style={{ width: `${field.healthy_area_percent}%` }} />
-              <div className="bg-attention" style={{ width: `${field.attention_area_percent}%` }} />
-              <div className="bg-problem" style={{ width: `${field.problem_area_percent}%` }} />
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground mt-2">
-              <span>🟢 {field.healthy_area_percent}% Healthy</span>
-              <span>🟡 {field.attention_area_percent}% Needs Attention</span>
-              <span>🔴 {field.problem_area_percent}% Problem</span>
-            </div>
+            <HealthBar
+              healthy={field.healthy_area_percent}
+              attention={field.attention_area_percent}
+              problem={field.problem_area_percent}
+              explain
+            />
+            {analysis && (
+              <div>
+                <h3 className="mb-2 text-sm font-medium">Spots to check</h3>
+                <SpotList
+                  spots={sortSpots(analysis.detections.map((d) => describeZone(d, field, analysis.survey_id)))}
+                  empty="No spots stand out in this flight."
+                />
+              </div>
+            )}
           </div>
         )}
 
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-sm">Surveys</h2>
+            <h2 className="font-semibold text-sm">Flights</h2>
             <Link href="/upload" className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
-              <UploadCloud size={13} /> New survey
+              <UploadCloud size={13} /> Upload a flight
             </Link>
           </div>
           <div className="space-y-2">
@@ -165,19 +181,54 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
                 <div>
                   <div className="font-medium text-sm">{survey.name}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {survey.drone_model ?? "Unknown drone"} · {survey.frame_count} frames ·{" "}
-                    {survey.status}
+                    {survey.survey_date ? `${new Date(survey.survey_date).toLocaleDateString()} · ` : ""}
+                    {survey.frame_count} photos · {flightStatusLabel(survey.status)}
                   </div>
                 </div>
                 <ArrowRight size={16} className="text-muted-foreground" />
               </Link>
             ))}
             {surveys && surveys.length === 0 && (
-              <div className="text-sm text-muted-foreground">No surveys yet for this field.</div>
+              <div className="text-sm text-muted-foreground">No flights uploaded for this field yet.</div>
             )}
           </div>
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/** Staff only: which farmer this field belongs to (they see it, nobody else does). */
+function OwnerPicker({ field }: { field: FieldSummary }) {
+  const qc = useQueryClient();
+  const { isStaff } = useMe();
+  const { data: farmers } = useQuery({ queryKey: ["farmers"], queryFn: api.listFarmers, enabled: isStaff });
+  const move = useMutation({
+    mutationFn: (ownerId: string) => api.updateField(field.id, { owner_id: ownerId }),
+    onSuccess: (updated) => {
+      qc.setQueryData(["field", field.id], updated);
+      qc.invalidateQueries({ queryKey: ["fields"] });
+    },
+  });
+  if (!isStaff) return null;
+  return (
+    <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      Farmer
+      <select
+        value={field.owner_id ?? ""}
+        disabled={move.isPending || !farmers}
+        onChange={(e) => e.target.value && move.mutate(e.target.value)}
+        className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-foreground"
+      >
+        {!field.owner_id && <option value="">Nobody yet (only staff see it)</option>}
+        {farmers?.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.name ?? f.email}
+          </option>
+        ))}
+      </select>
+      {move.isPending && <Loader2 className="animate-spin" size={13} />}
+      {move.isError && <span className="text-problem">{(move.error as Error).message}</span>}
+    </label>
   );
 }

@@ -1,10 +1,10 @@
 // Mirrors _classify_zone_type / SAFE_ACTIONS in backend/app/services/analysis_service.py.
 // Zones from trained detectors are typed "<model name>:<label>" and fall through to the raw label.
 export const DETECTION_TYPE_LABEL: Record<string, string> = {
-  bare_soil: "Bare Soil",
-  low_crop_density: "Low Crop Density",
-  patchy_vegetation: "Patchy Vegetation",
-  weed_candidate: "Weed Candidate (between rows)",
+  bare_soil: "Bare soil",
+  low_crop_density: "Thin crop",
+  patchy_vegetation: "Uneven growth",
+  weed_candidate: "Plants between the rows",
 };
 
 export function detectionTypeLabel(type: string): string {

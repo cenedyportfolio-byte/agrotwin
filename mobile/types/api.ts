@@ -24,6 +24,16 @@ export interface FieldOut {
 }
 
 /** GET /api/fields and GET /api/fields/{id} — a field plus its latest analysed numbers. */
+/** A login (backend/app/schemas.py UserOut). farmer: their own fields; operator, admin: every farm. */
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  role: "admin" | "operator" | "farmer";
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface FieldSummary extends FieldOut {
   latest_survey_id: string | null;
   latest_survey_status: string | null;

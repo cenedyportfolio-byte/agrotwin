@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 import { Settings, Leaf } from "lucide-react";
 import clsx from "clsx";
 import { NAV_ITEMS } from "@/lib/navItems";
+import { useMe } from "@/lib/useMe";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { isAdmin } = useMe();
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-surface">
@@ -22,7 +24,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        {NAV_ITEMS.filter((item) => isAdmin || !item.adminOnly).map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
           return (
             <Link

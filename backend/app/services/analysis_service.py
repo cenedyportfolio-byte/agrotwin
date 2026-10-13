@@ -73,13 +73,18 @@ PROBLEM_RATIO = 0.5
 SEVERE_RATIO = 0.25
 MIN_REFERENCE_COVER = 0.05  # below this nothing is growing anywhere; don't rescale noise
 
+# What to look for on foot — the drone measures how much green there is, not
+# why, so the advice is where to scout and what to check, never a treatment.
 SAFE_ACTIONS = {
-    "bare_soil": "Inspect area for emergence issues",
-    "low_crop_density": "Ground inspection recommended",
-    "patchy_vegetation": "Uneven vegetation detected — compare with previous survey",
-    "weed_candidate": "Scout for weeds — vegetation between crop rows (species not identified)",
+    "bare_soil": "Walk to this spot: did the seed come up? Look for crusting, washed-out or waterlogged soil, "
+                 "and planter skips.",
+    "low_crop_density": "Walk to this spot and count plants along a few feet of row. Look for planter skips, "
+                        "seedling disease, insect feeding, or wet or compacted soil.",
+    "patchy_vegetation": "Growth is uneven here. Check for late emergence, soil differences or early stress, "
+                         "and compare with the next flight.",
+    "weed_candidate": "Scout between the rows for weeds — the drone sees plants there but cannot tell which species.",
 }
-MODEL_ACTION = "Ground-check this model detection before acting on it"
+MODEL_ACTION = "Check this on foot before acting on it — it was found by a trained model, not confirmed."
 WEED_CANDIDATE_CONFIDENCE = 0.6  # inter-row vegetation is a candidate, not an identification
 
 log = logging.getLogger(__name__)

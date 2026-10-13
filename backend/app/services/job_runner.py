@@ -1,10 +1,15 @@
 """Background execution of processing jobs.
 
-One worker thread inside the API process: the heavy steps are GPU/CPU bound
-and SQLite has a single writer anyway, so running jobs one after another is
-both the simplest and the fastest option on a laptop. `submit` is the seam a
-Celery/RQ queue replaces — callers only create a ProcessingJob row and hand
-over its id.
+Two worker threads inside the API process, one job at a time each:
+- "quick": the upload pipeline (quick map, analysis), rebuilds and
+  recomputes — minutes, so a farmer's map never waits long;
+- "detailed": OpenDroneMap runs (odm_service) — hours, so they queue behind
+  each other without holding up anyone's quick map.
+A successful quick map queues the survey's detailed map by itself (when
+AGROTWIN_ODM_ENABLED). SQLite takes one writer at a time; WAL and the busy
+timeout make the two workers wait for each other instead of failing.
+`submit` is the seam a Celery/RQ queue replaces — callers only create a
+ProcessingJob row and hand over its id.
 """
 
 import logging
@@ -21,7 +26,10 @@ log = logging.getLogger(__name__)
 
 Pipeline = Callable[[Session, models.ProcessingJob], None]
 
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agrotwin-job")
+_executors = {
+    "quick": ThreadPoolExecutor(max_workers=1, thread_name_prefix="agrotwin-job"),
+    "detailed": ThreadPoolExecutor(max_workers=1, thread_name_prefix="agrotwin-odm"),
+}
 
 
 class JobAlreadyRunning(Exception):
@@ -41,12 +49,16 @@ def enqueue(
     job = job or processing_service.create_job(db, survey, steps)
     processing_service.queue(db, job)
     db.commit()
-    submit(job.id, pipeline)
+    submit(job.id, pipeline, "detailed" if steps == processing_service.DETAILED_STEPS else "quick")
     return job
 
 
-def submit(job_id: str, pipeline: Pipeline) -> None:
-    _executor.submit(_run, job_id, pipeline)
+def enqueue_detailed(db: Session, survey: models.Survey) -> models.ProcessingJob:
+    return enqueue(db, survey, processing_service.DETAILED_STEPS, processing_service.run_detailed_pipeline)
+
+
+def submit(job_id: str, pipeline: Pipeline, queue: str = "quick") -> None:
+    _executors[queue].submit(_run, job_id, pipeline)
 
 
 def _run(job_id: str, pipeline: Pipeline) -> None:
@@ -58,12 +70,19 @@ def _run(job_id: str, pipeline: Pipeline) -> None:
         processing_service.start(db, job)
         pipeline(db, job)
         db.commit()
+        if processing_service.is_full_pipeline(job):
+            _queue_detailed_map(db, job.survey)
     except Exception as exc:
         log.exception("processing job %s failed", job_id)
         db.rollback()
         job = db.get(models.ProcessingJob, job_id)
         if job is not None:
-            processing_service.mark_failed(db, job, str(exc) or type(exc).__name__)
+            if isinstance(exc, processing_service.FlightProblem):
+                processing_service.mark_failed(db, job, str(exc), exc.detail)
+            else:
+                plain = (processing_service.DETAILED_FAILURE if processing_service.is_detailed(job)
+                         else processing_service.UNEXPECTED_FAILURE)
+                processing_service.mark_failed(db, job, plain, f"{type(exc).__name__}: {exc}")
             if processing_service.is_full_pipeline(job):
                 job.survey.status = "FAILED"
             db.commit()
@@ -71,9 +90,23 @@ def _run(job_id: str, pipeline: Pipeline) -> None:
         db.close()
 
 
+def _queue_detailed_map(db: Session, survey: models.Survey) -> None:
+    from app.services import odm_service
+
+    db.refresh(survey)
+    if not odm_service.wants_detailed_map(survey):
+        return
+    try:
+        enqueue_detailed(db, survey)
+        log.info("survey %s: detailed map queued", survey.id)
+    except JobAlreadyRunning:
+        pass
+
+
 def recover_interrupted_jobs() -> int:
     """Marks jobs a previous API process was running as failed, so the UI stops
-    waiting on them and offers to start again."""
+    waiting on them and offers to start again — except detailed maps, which
+    are queued again (ODM resumes where it stopped)."""
     db = SessionLocal()
     try:
         stale = (
@@ -81,12 +114,21 @@ def recover_interrupted_jobs() -> int:
             .filter(models.ProcessingJob.status.in_(processing_service.WORKER_STATUSES))
             .all()
         )
+        resume = []
         for job in stale:
-            processing_service.mark_failed(db, job, "Interrupted: the API restarted while this job was running.")
+            processing_service.mark_failed(db, job, "The server restarted while this was running — press Try again.")
             if processing_service.is_full_pipeline(job) and job.survey.status == "PROCESSING":
                 job.survey.status = "FAILED"
+            if processing_service.is_detailed(job):
+                resume.append(job.survey)
         if stale:
             db.commit()
+        for survey in resume:
+            try:
+                enqueue_detailed(db, survey)
+                log.info("survey %s: detailed map queued again after the restart", survey.id)
+            except JobAlreadyRunning:
+                pass
         return len(stale)
     finally:
         db.close()

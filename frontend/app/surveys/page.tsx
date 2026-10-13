@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
+import { flightStatusLabel } from "@/lib/farm";
 import { Camera, ArrowRight } from "lucide-react";
 
 export default function SurveysPage() {
@@ -13,14 +14,14 @@ export default function SurveysPage() {
     <AppShell>
       <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8 space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold">Surveys</h1>
-          <p className="text-muted-foreground mt-1 text-xs sm:text-sm">Drone survey flights across all fields.</p>
+          <h1 className="text-xl sm:text-2xl font-semibold">Flights</h1>
+          <p className="text-muted-foreground mt-1 text-xs sm:text-sm">Every drone flight you uploaded, newest first.</p>
         </div>
 
         {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
 
         <div className="space-y-2">
-          {surveys?.map((survey) => (
+          {[...(surveys ?? [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).map((survey) => (
             <Link
               key={survey.id}
               href={`/surveys/${survey.id}`}
@@ -32,7 +33,8 @@ export default function SurveysPage() {
               <div className="flex-1">
                 <div className="font-medium text-sm">{survey.name}</div>
                 <div className="text-xs text-muted-foreground mt-0.5">
-                  {survey.drone_model ?? "Unknown drone"} · {survey.frame_count} frames
+                  {survey.survey_date ? `${new Date(survey.survey_date).toLocaleDateString()} · ` : ""}
+                  {survey.frame_count} photos{survey.drone_model ? ` · ${survey.drone_model}` : ""}
                 </div>
               </div>
               <StatusBadge status={survey.status} />
@@ -41,7 +43,11 @@ export default function SurveysPage() {
           ))}
           {surveys && surveys.length === 0 && (
             <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              No surveys yet.
+              No flights yet.{" "}
+              <Link href="/upload" className="text-brand hover:underline">
+                Upload your first flight
+              </Link>
+              .
             </div>
           )}
         </div>
@@ -53,5 +59,5 @@ export default function SurveysPage() {
 function StatusBadge({ status }: { status: string }) {
   const color =
     status === "COMPLETED" ? "text-healthy" : status === "FAILED" ? "text-problem" : "text-attention";
-  return <span className={`text-xs font-medium ${color}`}>{status}</span>;
+  return <span className={`text-xs font-medium ${color}`}>{flightStatusLabel(status)}</span>;
 }

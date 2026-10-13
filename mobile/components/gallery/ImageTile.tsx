@@ -5,6 +5,7 @@ import { useTheme } from "@/hooks/useTheme";
 import type { SurveyImage } from "@/types";
 import { formatCoordinate, formatMeters } from "@/utils/format";
 import { AppText } from "@/components/ui";
+import { authHeaders } from "@/services/apiClient";
 
 interface ImageTileProps {
   image: SurveyImage;
@@ -29,7 +30,7 @@ export const ImageTile = memo(function ImageTile({ image, index, thumbnailUrl, o
       style={({ pressed }) => [styles.tile, grid ? { width } : styles.listTile, { borderColor: colors.divider }, pressed && { backgroundColor: colors.pressed }]}
     >
       <View style={[grid ? styles.thumbGrid : styles.thumbList, { backgroundColor: colors.skeleton }]}>
-        <Image source={{ uri: thumbnailUrl }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" recyclingKey={image.id} transition={120} accessibilityIgnoresInvertColors />
+        <Image source={{ uri: thumbnailUrl, headers: authHeaders() }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" recyclingKey={image.id} transition={120} accessibilityIgnoresInvertColors />
       </View>
       <View style={grid ? styles.metaGrid : styles.metaList}>
         <AppText variant="smallStrong" numberOfLines={1}>

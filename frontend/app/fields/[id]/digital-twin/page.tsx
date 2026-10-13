@@ -15,6 +15,7 @@ import { MethodBadge, MockDataBadge } from "@/components/dashboard/StatusPill";
 import { groupFrames } from "@/lib/frames";
 import { selectViewerAssets } from "@/lib/surveyAssets";
 import { isWeedZone } from "@/lib/types";
+import { formatArea, HEALTH_EXPLAINER, pct } from "@/lib/farm";
 import type { CursorPosition } from "@/components/cesium/CesiumViewer";
 import type { SplatStatus } from "@/components/cesium/SplatLayer";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -265,10 +266,10 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         />
       </div>
 
-      {/* detection detail panel */}
+      {/* detection detail panel — docked at the bottom like the GCP card */}
       {selectedZone && (
-        <div className="pointer-events-none absolute right-2 sm:right-4 top-[18rem] sm:top-[21rem] z-20">
-          <DetectionPanel zone={selectedZone} onClose={() => setSelectedDetectionId(null)} />
+        <div className="pointer-events-none absolute inset-x-2 bottom-12 z-20 sm:left-auto sm:right-4 sm:bottom-16">
+          <DetectionPanel zone={selectedZone} field={field ?? null} onClose={() => setSelectedDetectionId(null)} />
         </div>
       )}
 
@@ -337,15 +338,17 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-[11px] sm:text-xs">
           {analysis && (
             <>
-              <span>🟢 {analysis.analysis_summary.healthy_area_percent}% <span className="hidden xs:inline">Healthy</span></span>
-              <span>🟡 {analysis.analysis_summary.attention_area_percent}% <span className="hidden xs:inline">Attention</span></span>
-              <span>🔴 {analysis.analysis_summary.problem_area_percent}% <span className="hidden xs:inline">Problem</span></span>
-              <MethodBadge method={analysis.method} />
+              <span title={HEALTH_EXPLAINER}>🟢 {pct(analysis.analysis_summary.healthy_area_percent)} healthy</span>
+              <span title={HEALTH_EXPLAINER}>🟡 {pct(analysis.analysis_summary.attention_area_percent)} attention</span>
+              <span title={HEALTH_EXPLAINER}>🔴 {pct(analysis.analysis_summary.problem_area_percent)} problem</span>
+              <span className="hidden sm:inline">
+                <MethodBadge method={analysis.method} />
+              </span>
               {analysis.is_mock && <MockDataBadge />}
             </>
           )}
           {!analysis && surveyId && !processing && (
-            <span className="text-muted-foreground">No analysis for this survey yet</span>
+            <span className="text-muted-foreground">Crop health not measured for this flight yet</span>
           )}
         </div>
         <div className="flex items-center gap-3 text-[11px] sm:text-xs text-muted-foreground">
@@ -356,7 +359,12 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
             </span>
           )}
           <span className="hidden sm:inline">
-            {images ? `${frameAnchors.length} frames` : ""} {field?.area_hectares != null && `· ${field.area_hectares} ha`}
+            {viewerAssets.orthomosaicSource && (
+              <span title="The quick map places each photo by its GPS position; the detailed map is rebuilt in 3D from all of them and lines up to the inch">
+                {viewerAssets.orthomosaicSource === "direct_georeferencing" ? "Quick map" : "Detailed map"} ·{" "}
+              </span>
+            )}
+            {images ? `${frameAnchors.length} photos` : ""} {field?.area_hectares != null && `· ${formatArea(field.area_hectares)}`}
           </span>
         </div>
       </div>

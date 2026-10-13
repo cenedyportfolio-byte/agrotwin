@@ -36,10 +36,3 @@ export function MethodBadge({ method }: { method: AnalysisMethod | null | undefi
     </Badge>
   );
 }
-
-export function statusOverall(healthy?: number | null, attention?: number | null, problem?: number | null) {
-  if (healthy == null) return { kind: "attention" as const, label: "No Data" };
-  if ((problem ?? 0) >= 15) return { kind: "problem" as const, label: "Problem Detected" };
-  if ((attention ?? 0) >= 15) return { kind: "attention" as const, label: "Needs Attention" };
-  return { kind: "healthy" as const, label: "Healthy" };
-}

@@ -47,6 +47,51 @@ GPU — `AGROTWIN_PYTHON` if set, then `backend/.venv-gpu`, `~/.venvs/agrotwin`
 `backend/.venv` — and say so loudly if processing would fall back to the CPU.
 Dependencies: `backend/requirements.txt` (+ `requirements-gpu.txt`), `frontend/package.json`.
 
+**On the university server** (https, sign-in, automatic detailed maps, the
+offline assistant, nightly backups): follow [deploy/README.md](deploy/README.md).
+
+## Detailed maps
+
+Every upload first gets a **quick map** (minutes): each photo placed by its
+GPS position, good enough to read the crop's health, but up to a few metres
+off. With `AGROTWIN_ODM_ENABLED=true` the server then makes the **detailed
+map** by itself: OpenDroneMap rebuilds the field in 3D from all the photos
+in Docker (hours on CPU, less with `opendronemap/odm:gpu`), and its
+orthophoto, elevation model, 3D model, the crop-health bands aligned on its
+cameras, any ground targets and a fresh crop-health check replace the quick
+ones. A second worker runs these one at a time, so they never hold up anyone's
+quick map; an interrupted run resumes after a restart. Staff can start one
+by hand (a flight's **Detailed Map** button); without Docker the quick map
+is the result. Optional e-mail when a map is ready: `AGROTWIN_SMTP_*`.
+
+## Accounts and sign-in
+
+Everyone signs in. Three roles:
+
+| Role | Sees | Can also |
+|---|---|---|
+| **Farmer** | only the fields of their own farm | upload flights, rename their fields, change their password |
+| **Operator** | every farm | give a field to a farmer, rebuild mosaics, recompute analyses, import processed data |
+| **Admin** | every farm | everything an operator can, plus create / switch off accounts and set new passwords (Users page) |
+
+On a new server, create the first admin once, from `backend/` (the password
+is asked for):
+
+```bash
+python -m scripts.create_user --email you@university.edu --name "Your Name" --role admin
+```
+
+Then sign in and add the farmers on the **Users** page; each gets a
+temporary password to change under Settings. Fields made before accounts
+existed belong to nobody (only staff see them): open the field and choose
+its farmer, or create that farmer with `--assign-unowned`.
+
+Sessions last 60 days (`AGROTWIN_SESSION_DAYS`). Behind https, set
+`AGROTWIN_COOKIE_SECURE=true` so the sign-in cookie is never sent in clear.
+The mobile app (`mobile/`) signs in with the same accounts: it sends its
+session as a Bearer token, and hands it to the web map it embeds with a
+one-time code (`POST /api/auth/handoff` → `/auth/handoff?code=…`).
+
 ## What you can do
 
 1. **Upload a flight** (`/upload`): create a field + survey, select the

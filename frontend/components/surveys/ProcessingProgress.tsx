@@ -1,15 +1,16 @@
 import { Check, Loader2, Circle, X, Clock } from "lucide-react";
 import type { ProcessingJob, ProcessingStep } from "@/lib/types";
 import { isJobActive } from "@/lib/api";
+import { useMe } from "@/lib/useMe";
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: "Waiting for images",
-  UPLOADING: "Uploading images",
-  QUEUED: "Queued",
-  PROCESSING: "Processing",
-  GENERATING_ORTHOMOSAIC: "Building field map",
-  GENERATING_ANALYSIS: "Analysing vegetation",
-  COMPLETED: "Completed",
+  PENDING: "Waiting for photos",
+  UPLOADING: "Receiving photos",
+  QUEUED: "Waiting in line",
+  PROCESSING: "Working",
+  GENERATING_ORTHOMOSAIC: "Building the field map",
+  GENERATING_ANALYSIS: "Checking crop health",
+  COMPLETED: "Done",
   FAILED: "Failed",
 };
 
@@ -30,7 +31,10 @@ function StepRow({ step, isCurrent, running }: { step: ProcessingStep; isCurrent
   return (
     <div className="flex items-center gap-3 py-1.5 text-sm">
       {icon}
-      <span className={step.status === "pending" && !isCurrent ? "text-muted-foreground" : ""}>{step.label}</span>
+      <span className={step.status === "pending" && !isCurrent ? "text-muted-foreground" : ""}>
+        {step.label}
+        {isCurrent && step.note && <span className="block text-xs text-muted-foreground">{step.note}</span>}
+      </span>
     </div>
   );
 }
@@ -66,9 +70,16 @@ export function ProcessingProgress({
       {job.status === "FAILED" && (
         <div className="mt-3 space-y-2 border-t border-border pt-3">
           <div className="text-xs text-problem break-words">{job.error_message ?? "Processing failed."}</div>
+          <StaffDetail detail={job.error_detail} />
           {action}
         </div>
       )}
     </div>
   );
+}
+
+function StaffDetail({ detail }: { detail: string | null | undefined }) {
+  const { isStaff } = useMe();
+  if (!isStaff || !detail) return null;
+  return <div className="font-mono text-[11px] text-muted-foreground break-words">Staff detail: {detail}</div>;
 }

@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import auth, models, schemas
 from app.database import get_db
-from app.services import detector_service, job_runner, llm_service, processing_service, rag_service
+from app.services import analysis_service, detector_service, job_runner, llm_service, processing_service, rag_service
 
-router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+# every route: signed in, and a {survey_id} must be on one of the user's fields
+router = APIRouter(prefix="/api/analysis", tags=["analysis"], dependencies=[Depends(auth.path_access)])
 
 
 @router.get("/detectors")
@@ -43,7 +44,9 @@ def get_analysis(survey_id: str, db: Session = Depends(get_db)):
             severity=d.severity,
             confidence=d.confidence,
             geometry=json.loads(d.geometry_geojson),
-            recommended_action=d.recommended_action,
+            # the advice depends only on the type: zones stored before it was
+            # reworded get today's text
+            recommended_action=analysis_service.SAFE_ACTIONS.get(d.type, d.recommended_action),
         )
         for d in result.detections
     ]
@@ -62,7 +65,8 @@ def get_analysis(survey_id: str, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/{survey_id}/recompute", response_model=schemas.ProcessingJobOut, status_code=202)
+@router.post("/{survey_id}/recompute", response_model=schemas.ProcessingJobOut, status_code=202,
+             dependencies=[Depends(auth.require_staff)])
 def recompute_analysis(survey_id: str, db: Session = Depends(get_db)):
     """Queues a fresh vegetation analysis from the survey's own imagery (see
     analysis_service). Poll GET /api/surveys/{id}/job for progress."""

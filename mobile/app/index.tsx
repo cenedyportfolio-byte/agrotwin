@@ -1,6 +1,9 @@
 import { Redirect } from "expo-router";
+import { useAuth } from "@/providers/AuthProvider";
 
-/** Entry: the app opens on the Home tab. (A sign-in gate would go here later.) */
+/** Entry: the Home tab when signed in, otherwise the sign-in screen. */
 export default function Index() {
-  return <Redirect href="/(tabs)" />;
+  const { ready, isAuthenticated } = useAuth();
+  if (!ready) return null;
+  return <Redirect href={isAuthenticated ? "/(tabs)" : "/login"} />;
 }

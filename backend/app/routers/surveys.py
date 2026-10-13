@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import auth, models, schemas
 from app.database import get_db
 from app.services import (
     gcp_service,
@@ -20,7 +20,8 @@ from app.services import (
 from app.services.metadata_service import extract_image_metadata
 from app.services.survey_service import camera_fields, classify_uploaded_file
 
-router = APIRouter(prefix="/api/surveys", tags=["surveys"])
+# every route: signed in, and a {survey_id} must be on one of the user's fields
+router = APIRouter(prefix="/api/surveys", tags=["surveys"], dependencies=[Depends(auth.path_access)])
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".tif", ".tiff"}
 BUSY = "This survey is being processed — wait for the current job to finish"
@@ -66,15 +67,15 @@ def _upload_size(upload: UploadFile) -> int:
 
 
 @router.get("", response_model=list[schemas.SurveyOut])
-def list_surveys(db: Session = Depends(get_db)):
-    return db.query(models.Survey).all()
+def list_surveys(user: models.User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    field_ids = auth.visible_fields(db, user).with_entities(models.Field.id)
+    return db.query(models.Survey).filter(models.Survey.field_id.in_(field_ids)).all()
 
 
 @router.post("", response_model=schemas.SurveyOut)
-def create_survey(payload: schemas.SurveyCreate, db: Session = Depends(get_db)):
-    field = db.get(models.Field, payload.field_id)
-    if not field:
-        raise HTTPException(404, "Field not found")
+def create_survey(payload: schemas.SurveyCreate, user: models.User = Depends(auth.current_user),
+                  db: Session = Depends(get_db)):
+    field = auth.visible_field(db, user, payload.field_id)
 
     survey = models.Survey(
         field_id=field.id,
@@ -142,6 +143,9 @@ def upload_survey_images(survey_id: str, files: list[UploadFile], db: Session = 
         db.flush()  # later files of this batch pair with it by frame key
         registered[img.filename] = img
         created.append(img)
+        if not survey.drone_model and meta.model:
+            # farmers need not know their drone's model name: the photos carry it
+            survey.drone_model = " ".join(str(v).strip() for v in (meta.make, meta.model) if v).strip() or None
 
     survey.image_count = db.query(models.SurveyImage).filter_by(survey_id=survey.id).count()
     dates = [img.captured_at for img in created if img.captured_at]
@@ -158,7 +162,7 @@ def upload_survey_images(survey_id: str, files: list[UploadFile], db: Session = 
     return created
 
 
-@router.post("/{survey_id}/assets", response_model=schemas.SurveyAssetOut)
+@router.post("/{survey_id}/assets", response_model=schemas.SurveyAssetOut, dependencies=[Depends(auth.require_staff)])
 def upload_survey_asset(survey_id: str, asset_type: str, file: UploadFile, db: Session = Depends(get_db)):
     """Manual import of processed data — GeoTIFF rasters, GeoJSON, 3D Tiles
     (.zip) and LAS/LAZ point clouds. Only georeferenced files are accepted
@@ -193,13 +197,34 @@ def trigger_processing(survey_id: str, db: Session = Depends(get_db)):
     return processing_service.job_to_dict(job)
 
 
-@router.post("/{survey_id}/mosaic", response_model=schemas.ProcessingJobOut, status_code=202)
+@router.post("/{survey_id}/mosaic", response_model=schemas.ProcessingJobOut, status_code=202,
+             dependencies=[Depends(auth.require_staff)])
 def rebuild_mosaic(survey_id: str, db: Session = Depends(get_db)):
     """Queues a rebuild of the direct-georeferencing quick mosaics (RGB, plus
     NDVI/NDRE/GNDVI when the bands exist), their tile pyramids, and the analysis."""
     survey = _get_survey(db, survey_id)
     try:
         job = job_runner.enqueue(db, survey, processing_service.MOSAIC_STEPS, processing_service.run_mosaic_job)
+    except job_runner.JobAlreadyRunning as exc:
+        raise HTTPException(409, BUSY) from exc
+    return processing_service.job_to_dict(job)
+
+
+@router.post("/{survey_id}/detailed", response_model=schemas.ProcessingJobOut, status_code=202)
+def make_detailed_map(survey_id: str, db: Session = Depends(get_db)):
+    """Queues the detailed map (OpenDroneMap, hours) — again after a failure, or
+    for a flight from before it was switched on. It also starts by itself after
+    every quick map."""
+    from app.config import settings
+    from app.services import odm_service
+
+    if not settings.odm_enabled:
+        raise HTTPException(409, "Detailed maps are not switched on on this server")
+    survey = _get_survey(db, survey_id)
+    if len(odm_service.photos(survey)) < settings.odm_min_photos:
+        raise HTTPException(422, f"A detailed map needs at least {settings.odm_min_photos} photos with a GPS position")
+    try:
+        job = job_runner.enqueue_detailed(db, survey)
     except job_runner.JobAlreadyRunning as exc:
         raise HTTPException(409, BUSY) from exc
     return processing_service.job_to_dict(job)
@@ -351,7 +376,7 @@ def get_asset_file(survey_id: str, asset_id: str, file_path: str, db: Session = 
     return FileResponse(target, media_type=media_type or "application/octet-stream")
 
 
-@router.delete("/{survey_id}/assets/{asset_id}")
+@router.delete("/{survey_id}/assets/{asset_id}", dependencies=[Depends(auth.require_staff)])
 def delete_survey_asset(survey_id: str, asset_id: str, db: Session = Depends(get_db)):
     asset = db.get(models.SurveyAsset, asset_id)
     if not asset or asset.survey_id != survey_id:

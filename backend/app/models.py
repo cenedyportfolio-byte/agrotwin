@@ -16,18 +16,45 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+ROLES = ("admin", "operator", "farmer")
+STAFF_ROLES = ("admin", "operator")
+
+
 class User(Base):
-    """Present for the eventual multi-user SaaS migration. Auth is
-    intentionally not implemented for the local MVP (dev rule #13) — there is
-    no login flow and no FK from Farm enforces an owner yet. A single
-    row is enough to prove the schema/relationship shape out."""
+    """A login (app/auth.py). admin: everything, including accounts; operator:
+    every farm, no account management; farmer: only the fields of the farm
+    they own."""
 
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    email: Mapped[str] = mapped_column(String, unique=True)
+    email: Mapped[str] = mapped_column(String, unique=True)  # stored lower-case
     name: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str | None] = mapped_column(String, nullable=True)  # one of ROLES
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    farms: Mapped[list["Farm"]] = relationship(back_populates="owner")
+
+    @property
+    def is_staff(self) -> bool:
+        return self.role in STAFF_ROLES
+
+
+class UserSession(Base):
+    """A signed-in browser or app. Only the token's SHA-256 is stored, so a copy
+    of the database cannot be used to sign in."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    token_hash: Mapped[str] = mapped_column(String, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+    user: Mapped[User] = relationship()
 
 
 class Farm(Base):
@@ -36,8 +63,11 @@ class Farm(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String)
     location_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # the farmer whose fields these are; None: only staff see them
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
+    owner: Mapped[User | None] = relationship(back_populates="farms")
     fields: Mapped[list["Field"]] = relationship(back_populates="farm", cascade="all, delete-orphan")
 
 
@@ -208,7 +238,8 @@ class ProcessingJob(Base):
     status: Mapped[str] = mapped_column(String, default="PENDING")
     current_step: Mapped[str | None] = mapped_column(String, nullable=True)
     steps_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)  # for the farmer
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)  # the exception, for staff
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 

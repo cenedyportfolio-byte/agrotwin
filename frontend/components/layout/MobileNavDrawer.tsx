@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 import { Leaf, Settings, X } from "lucide-react";
 import clsx from "clsx";
 import { NAV_ITEMS } from "@/lib/navItems";
+import { useMe } from "@/lib/useMe";
 
 export function MobileNavDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const { isAdmin } = useMe();
   if (!open) return null;
 
   return (
@@ -27,7 +29,7 @@ export function MobileNavDrawer({ open, onClose }: { open: boolean; onClose: () 
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {NAV_ITEMS.filter((item) => isAdmin || !item.adminOnly).map(({ href, label, icon: Icon }) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             return (
               <Link

@@ -1,6 +1,6 @@
 import { requestTimeoutMs, uploadTimeoutMs } from "@/constants/config";
 import { ApiError } from "./errors";
-import { getApiUrl, getAuthToken, getWebViewerUrl } from "./runtimeConfig";
+import { getApiUrl, getAuthToken, getWebViewerUrl, notifyUnauthorized } from "./runtimeConfig";
 
 /**
  * Centralised HTTP access to the FastAPI backend. Every service goes through
@@ -127,6 +127,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
   clear();
 
+  if (res.status === 401 && headers.Authorization) notifyUnauthorized();
   if (!res.ok) {
     const detail = await readDetail(res);
     throw new ApiError("http", detail ?? res.statusText ?? `Request failed (${res.status})`, {
@@ -195,6 +196,7 @@ export function uploadMultipart<T>(path: string, form: FormData, options: Upload
         }
         return;
       }
+      if (xhr.status === 401 && authHeaders().Authorization) notifyUnauthorized();
       let detail: string | null = null;
       try {
         const body = JSON.parse(xhr.responseText) as { detail?: unknown };

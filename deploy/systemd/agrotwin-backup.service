@@ -1,0 +1,9 @@
+[Unit]
+Description=AgroTwin database backup
+
+[Service]
+Type=oneshot
+User=agrotwin
+Group=agrotwin
+EnvironmentFile=/etc/agrotwin/agrotwin.env
+ExecStart=/opt/agrotwin/deploy/backup.sh

@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Sprout, Camera, BarChart3, Bot } from "lucide-react";
+import { LayoutDashboard, Sprout, UploadCloud, BarChart3, Bot } from "lucide-react";
 import clsx from "clsx";
 
+// a farmer's phone: their fields, uploading a flight, the health of the crop;
+// Flights, How to fly and Settings are in the menu
 const BOTTOM_NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/fields", label: "Fields", icon: Sprout },
-  { href: "/surveys", label: "Surveys", icon: Camera },
-  { href: "/analysis", label: "Analysis", icon: BarChart3 },
+  { href: "/upload", label: "Upload", icon: UploadCloud },
+  { href: "/analysis", label: "Health", icon: BarChart3 },
   { href: "/ask-ai", label: "Ask AI", icon: Bot },
 ];
 

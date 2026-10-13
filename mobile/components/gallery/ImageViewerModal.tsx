@@ -10,6 +10,7 @@ import { useTheme } from "@/hooks/useTheme";
 import type { SurveyImage } from "@/types";
 import { Button, IconButton, AppText } from "@/components/ui";
 import { ImageMetadata } from "./ImageMetadata";
+import { authHeaders } from "@/services/apiClient";
 
 interface ImageViewerModalProps {
   images: SurveyImage[];
@@ -124,7 +125,7 @@ export function ImageViewerModal({ images, index, displayUrl, drone, onClose, on
             <GestureDetector gesture={composed}>
               <Animated.View style={[styles.stage, { width: stageWidth, height: (stageWidth * 3) / 4 }, animated]}>
                 <Image
-                  source={{ uri: displayUrl(image) }}
+                  source={{ uri: displayUrl(image), headers: authHeaders() }}
                   style={StyleSheet.absoluteFill}
                   contentFit="contain"
                   cachePolicy="memory-disk"

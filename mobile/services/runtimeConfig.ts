@@ -8,14 +8,17 @@ import { env, normalizeBaseUrl } from "@/constants/config";
 interface RuntimeConfig {
   apiUrl: string;
   webViewerUrl: string;
-  /** Returns a bearer token once authentication exists; null until then. */
+  /** The signed-in session's bearer token; null when signed out. */
   getAuthToken: () => string | null;
+  /** Called when the server answers 401 to a signed-in request (session ended). */
+  onUnauthorized: () => void;
 }
 
 const config: RuntimeConfig = {
   apiUrl: normalizeBaseUrl(env.apiUrl),
   webViewerUrl: normalizeBaseUrl(env.webViewerUrl),
   getAuthToken: () => null,
+  onUnauthorized: () => {},
 };
 
 export function setBaseUrls(urls: { apiUrl?: string | null; webViewerUrl?: string | null }): void {
@@ -25,6 +28,15 @@ export function setBaseUrls(urls: { apiUrl?: string | null; webViewerUrl?: strin
 
 export function setAuthTokenGetter(getter: () => string | null): void {
   config.getAuthToken = getter;
+}
+
+export function setUnauthorizedHandler(handler: () => void): void {
+  config.onUnauthorized = handler;
+}
+
+/** A signed-in request was refused: the session expired or the account was switched off. */
+export function notifyUnauthorized(): void {
+  config.onUnauthorized();
 }
 
 export function getApiUrl(): string {

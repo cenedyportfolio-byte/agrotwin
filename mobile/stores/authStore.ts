@@ -1,17 +1,19 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { setAuthTokenGetter } from "@/services/runtimeConfig";
+import type { User } from "@/types";
 import { secureStorage } from "./secureStorage";
 
 /**
- * Authentication is not part of the local MVP (the backend has no login
- * flow yet). This store is the extension point: when JWT auth lands, the
- * token saved here is sent as `Authorization: Bearer …` by the API client.
+ * The signed-in session: the token from POST /api/auth/login (sent as
+ * `Authorization: Bearer …` by the API client) and who it belongs to, kept in
+ * the device's secure storage so the farmer stays signed in.
  */
 interface AuthState {
   token: string | null;
-  userName: string | null;
-  setSession: (token: string, userName?: string | null) => void;
+  user: User | null;
+  setSession: (token: string, user: User) => void;
+  setUser: (user: User) => void;
   clearSession: () => void;
 }
 
@@ -19,9 +21,10 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       token: null,
-      userName: null,
-      setSession: (token, userName = null) => set({ token, userName }),
-      clearSession: () => set({ token: null, userName: null }),
+      user: null,
+      setSession: (token, user) => set({ token, user }),
+      setUser: (user) => set({ user }),
+      clearSession: () => set({ token: null, user: null }),
     }),
     { name: "agrotwin.auth", storage: createJSONStorage(() => secureStorage) }
   )

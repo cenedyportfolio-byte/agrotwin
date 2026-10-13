@@ -15,7 +15,22 @@ export interface FieldOut {
   created_at: string;
 }
 
+export type UserRole = "admin" | "operator" | "farmer";
+
+/** A login. admin: everything incl. accounts; operator: every farm; farmer: their own fields. */
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface FieldSummary extends FieldOut {
+  /** The farmer whose field this is (null: not given to anyone yet — staff only). */
+  owner_id: string | null;
+  owner_name: string | null;
   latest_survey_id: string | null;
   latest_survey_status: string | null;
   healthy_area_percent: number | null;
@@ -185,6 +200,8 @@ export interface ProcessingStep {
   key: string;
   label: string;
   status: "pending" | "complete" | "failed";
+  /** Progress within a long step ("matching the photos (stage 4 of 13)"). */
+  note?: string;
 }
 
 export type JobStatus =
@@ -204,6 +221,8 @@ export interface ProcessingJob {
   current_step: string | null;
   steps: ProcessingStep[];
   error_message: string | null;
+  /** The technical reason (staff only). */
+  error_detail?: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

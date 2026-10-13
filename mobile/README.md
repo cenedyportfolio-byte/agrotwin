@@ -56,6 +56,20 @@ npm install
 `TEMP` to folders under `E:\Test1\agrotwin\.cache` before running npm — the
 `run.ps1` launchers already do this for the backend and web app.)
 
+## Signing in
+
+The app uses the same accounts as the website (an admin creates them on the
+web **Users** page). The sign-in screen stores the session token in the
+device's secure storage and sends it as `Authorization: Bearer …`; a 401
+from the server (session ended, account switched off) returns to the sign-in
+screen and clears every cached screen. The embedded web map is a WebView
+with its own cookies, so the app first asks `POST /api/auth/handoff` for a
+one-time code (valid a minute) and opens `<web>/auth/handoff?code=…&next=<map>`,
+which turns it into the WebView's own session.
+
+On the university server the API and the website share one https address:
+put it in both `.env` values (or in the app's Settings → AgroTwin server).
+
 ## 3. Configure `.env`
 
 ```powershell

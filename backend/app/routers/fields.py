@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import auth, models, schemas
 from app.database import get_db
 
-router = APIRouter(prefix="/api/fields", tags=["fields"])
+# every route: signed in, and a {field_id} must be one of the user's fields
+router = APIRouter(prefix="/api/fields", tags=["fields"], dependencies=[Depends(auth.path_access)])
 
 
 def _to_summary(field: models.Field) -> schemas.FieldSummary:
@@ -20,9 +21,12 @@ def _to_summary(field: models.Field) -> schemas.FieldSummary:
         is_mock = latest_result.is_mock
         method = latest_result.method
 
+    owner = field.farm.owner if field.farm else None
     return schemas.FieldSummary(
         id=field.id,
         farm_id=field.farm_id,
+        owner_id=owner.id if owner else None,
+        owner_name=(owner.name or owner.email) if owner else None,
         name=field.name,
         crop_type=field.crop_type,
         boundary_geojson=field.boundary_geojson,
@@ -41,9 +45,8 @@ def _to_summary(field: models.Field) -> schemas.FieldSummary:
 
 
 @router.get("", response_model=list[schemas.FieldSummary])
-def list_fields(db: Session = Depends(get_db)):
-    fields = db.query(models.Field).all()
-    return [_to_summary(f) for f in fields]
+def list_fields(user: models.User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    return [_to_summary(f) for f in auth.visible_fields(db, user).all()]
 
 
 @router.get("/{field_id}", response_model=schemas.FieldSummary)
@@ -55,12 +58,20 @@ def get_field(field_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.FieldOut)
-def create_field(payload: schemas.FieldCreate, db: Session = Depends(get_db)):
-    farm_id = payload.farm_id
-    if not farm_id:
-        farm = db.query(models.Farm).first()
+def create_field(payload: schemas.FieldCreate, user: models.User = Depends(auth.current_user),
+                 db: Session = Depends(get_db)):
+    """A farmer's field goes into their own farm; staff name the farmer it is
+    for (owner_id), or leave it unassigned (only staff see it)."""
+    if not user.is_staff:
+        farm_id = auth.farm_of(db, user).id
+    elif payload.owner_id:
+        farm_id = auth.farm_of(db, _farmer(db, payload.owner_id)).id
+    elif payload.farm_id and db.get(models.Farm, payload.farm_id):
+        farm_id = payload.farm_id
+    else:
+        farm = db.query(models.Farm).filter(models.Farm.owner_id.is_(None)).first()
         if not farm:
-            farm = models.Farm(name="My Farm")
+            farm = models.Farm(name="Unassigned fields")
             db.add(farm)
             db.flush()
         farm_id = farm.id
@@ -73,11 +84,17 @@ def create_field(payload: schemas.FieldCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{field_id}", response_model=schemas.FieldSummary)
-def update_field(field_id: str, payload: schemas.FieldUpdate, db: Session = Depends(get_db)):
-    """Renames the field and/or sets its crop type (ingested surveys default to 'soybean')."""
+def update_field(field_id: str, payload: schemas.FieldUpdate, user: models.User = Depends(auth.current_user),
+                 db: Session = Depends(get_db)):
+    """Renames the field and/or sets its crop type (ingested surveys default to
+    'soybean'); staff can also hand it to a farmer (owner_id)."""
     field = db.get(models.Field, field_id)
     if not field:
         raise HTTPException(404, "Field not found")
+    if payload.owner_id is not None:
+        if not user.is_staff:
+            raise HTTPException(403, "Only AgroTwin staff can move a field to another farmer")
+        field.farm_id = auth.farm_of(db, _farmer(db, payload.owner_id)).id
     if payload.name is not None:
         name = payload.name.strip()
         if not name:
@@ -91,6 +108,13 @@ def update_field(field_id: str, payload: schemas.FieldUpdate, db: Session = Depe
     db.commit()
     db.refresh(field)
     return _to_summary(field)
+
+
+def _farmer(db: Session, user_id: str) -> models.User:
+    owner = db.get(models.User, user_id)
+    if owner is None or owner.role != "farmer":
+        raise HTTPException(422, "Choose a farmer's account as the owner")
+    return owner
 
 
 @router.get("/{field_id}/surveys", response_model=list[schemas.SurveyOut])

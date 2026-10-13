@@ -4,16 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
+import { HealthBar } from "@/components/dashboard/HealthBar";
+import { SpotList } from "@/components/dashboard/SpotList";
 import { MethodBadge, MockDataBadge } from "@/components/dashboard/StatusPill";
 import { useFieldAnalyses } from "@/lib/hooks/useFieldAnalyses";
-import { detectionTypeLabel } from "@/lib/detectionTypes";
-import { isWeedZone, type RowMetrics } from "@/lib/types";
-
-const SEVERITY_COLOR: Record<string, string> = {
-  low: "text-attention",
-  medium: "text-attention",
-  high: "text-problem",
-};
+import { describeZone, sortSpots } from "@/lib/farm";
+import { useMe } from "@/lib/useMe";
+import type { RowMetrics } from "@/lib/types";
 
 const ROW_STATUS_LABEL: Record<string, string> = {
   measured: "Weed candidates measured",
@@ -59,25 +56,24 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
 }
 
 export default function AnalysisPage() {
+  const { isStaff } = useMe();
   const { data: fields } = useQuery({ queryKey: ["fields"], queryFn: api.listFields });
   const analyses = useFieldAnalyses(fields);
-  const { data: detectors } = useQuery({ queryKey: ["detectors"], queryFn: api.getDetectors });
+  const { data: detectors } = useQuery({ queryKey: ["detectors"], queryFn: api.getDetectors, enabled: isStaff });
 
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8 space-y-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold">Analysis</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold">Crop health</h1>
           <p className="text-muted-foreground mt-1 text-xs sm:text-sm">
-            Vegetation coverage measured from each survey&apos;s own imagery — NDVI from the
-            multispectral NIR/Red bands where they exist, an RGB vegetation index (Excess Green)
-            otherwise — plus crop-row geometry and canopy closure from the orthomosaic. This measures
-            live-vegetation coverage, not species or disease: weed candidates are vegetation between
-            crop rows for a scout to check, and no pesticide or disease recommendations are made.
+            How evenly your crop is growing in the latest flight of each field, and the spots worth walking to. The
+            drone measures how much green, growing crop there is — it cannot tell why a spot is thin, which weed it
+            is, or whether there is disease. Go and look before you act.
           </p>
         </div>
 
-        {detectors && detectors.installed.length === 0 && (
+        {isStaff && detectors && detectors.installed.length === 0 && (
           <div className="rounded-xl border border-border bg-surface px-5 py-3 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">Trained detectors: none installed.</span> {detectors.note}{" "}
             <Link href="/settings" className="text-brand hover:underline">
@@ -89,8 +85,8 @@ export default function AnalysisPage() {
 
         <div className="space-y-4">
           {analyses.data?.map(({ field, analysis }) => (
-            <div key={field.id} className="rounded-xl border border-border bg-surface p-5">
-              <div className="flex items-center justify-between mb-3">
+            <div key={field.id} className="rounded-xl border border-border bg-surface p-4 sm:p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <Link href={`/fields/${field.id}`} className="font-semibold hover:underline">
                   {field.name}
                 </Link>
@@ -100,34 +96,21 @@ export default function AnalysisPage() {
                 </div>
               </div>
 
-              {!analysis && <div className="text-sm text-muted-foreground">No analysis available yet.</div>}
+              {!analysis && <div className="text-sm text-muted-foreground">No flight measured yet.</div>}
 
               {analysis && (
                 <>
-                  <div className="flex h-2 w-full overflow-hidden rounded-full bg-surface-2 mb-3">
-                    <div className="bg-healthy" style={{ width: `${analysis.analysis_summary.healthy_area_percent}%` }} />
-                    <div className="bg-attention" style={{ width: `${analysis.analysis_summary.attention_area_percent}%` }} />
-                    <div className="bg-problem" style={{ width: `${analysis.analysis_summary.problem_area_percent}%` }} />
-                  </div>
-
-                  <div className="space-y-2">
-                    {analysis.detections.map((d) => (
-                      <div key={d.id} className="flex items-center justify-between text-sm border-t border-border pt-2">
-                        <Link href={`/fields/${field.id}/digital-twin?zone=${d.id}`} className="hover:underline">
-                          {isWeedZone(d.type) && <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-500 align-middle" />}
-                          {detectionTypeLabel(d.type)}
-                        </Link>
-                        <span className={`text-xs font-medium ${SEVERITY_COLOR[d.severity]}`}>
-                          {d.severity} · {Math.round(d.confidence * 100)}%
-                        </span>
-                      </div>
-                    ))}
-                    {analysis.detections.length === 0 && (
-                      <div className="text-xs text-muted-foreground">No zones flagged.</div>
-                    )}
-                  </div>
-
-                  {analysis.metrics?.rows && <RowMetricsCard rows={analysis.metrics.rows} />}
+                  <HealthBar
+                    healthy={analysis.analysis_summary.healthy_area_percent}
+                    attention={analysis.analysis_summary.attention_area_percent}
+                    problem={analysis.analysis_summary.problem_area_percent}
+                    explain
+                  />
+                  <SpotList
+                    spots={sortSpots(analysis.detections.map((d) => describeZone(d, field, analysis.survey_id)))}
+                    empty="No spots stand out in this flight."
+                  />
+                  {isStaff && analysis.metrics?.rows && <RowMetricsCard rows={analysis.metrics.rows} />}
                 </>
               )}
             </div>

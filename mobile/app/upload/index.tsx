@@ -140,12 +140,12 @@ export default function UploadScreen() {
           <View style={styles.row}>
             <Monitor size={20} color={colors.accent} strokeWidth={iconStroke} />
             <AppText variant="bodyStrong" style={{ flex: 1 }}>
-              Large drone surveys: upload from your computer
+              Large flights: use the website
             </AppText>
           </View>
           <AppText variant="caption" tone="muted" style={{ marginTop: 4 }}>
-            A full flight is often a thousand photos and many gigabytes. Use the AgroTwin web app on the computer that runs the backend for those. The phone is
-            great for small batches, single photos, imported results and testing.
+            A full flight is often a thousand photos and many gigabytes. Upload those on the AgroTwin website from a computer, or from this
+            phone's browser with Wi-Fi. The app is good for small batches and single photos.
           </AppText>
         </Blueprint>
 

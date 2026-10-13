@@ -57,10 +57,9 @@ export default function AskAiPage() {
             <h1 className="text-xl sm:text-2xl font-semibold">Ask AI</h1>
           </div>
           <p className="text-muted-foreground mt-2 text-xs sm:text-sm">
-            Answers are grounded in the field&apos;s measured analysis plus a local agronomy knowledge base (growth
-            stages, indices, scouting, weeds, survey practice) — the assistant explains the numbers and cites its sources,
-            it never invents findings. A local Ollama model is used for the wording when one is running; otherwise the
-            answer is built directly from the measurements and says so.
+            Ask about your field in your own words. Answers come from what was measured in your latest flight and from
+            a farming reference library, and say where each fact comes from. The assistant only explains what the drone
+            measured — it does not make up findings, and it cannot see disease or tell weed species apart.
           </p>
         </div>
 
@@ -101,7 +100,7 @@ export default function AskAiPage() {
                     {h.sources.length > 0 && (
                       <div className="mt-2 border-t border-border pt-1.5 text-[11px] text-muted-foreground space-y-0.5">
                         <div className="flex items-center gap-1 font-medium">
-                          <BookOpen size={11} /> Sources (local knowledge base)
+                          <BookOpen size={11} /> Sources
                         </div>
                         {h.sources.map((s, j) => (
                           <div key={j} title={s.snippet}>

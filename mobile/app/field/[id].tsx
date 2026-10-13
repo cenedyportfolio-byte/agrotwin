@@ -19,6 +19,7 @@ import { Blueprint, Button, ErrorState, KeyValueRow, ListGroup, ListRow, Loading
 import { FieldHealthSummary } from "@/components/fields/FieldHealthSummary";
 import { ProcessingProgress } from "@/components/processing/ProcessingProgress";
 import { AskAiFab } from "@/components/ai/AskAiFab";
+import { authHeaders } from "@/services/apiClient";
 
 export default function FieldDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -75,7 +76,7 @@ export default function FieldDetailScreen() {
       <View style={styles.body}>
         <View style={[styles.imagery, { borderColor: colors.divider }]}>
           {previewUrl ? (
-            <Image source={{ uri: previewUrl }} style={styles.fill} contentFit="cover" cachePolicy="memory-disk" accessibilityLabel="Stitched field map" />
+            <Image source={{ uri: previewUrl, headers: authHeaders() }} style={styles.fill} contentFit="cover" cachePolicy="memory-disk" accessibilityLabel="Stitched field map" />
           ) : (
             <View style={[styles.fill, styles.center]}>
               <AppText variant="tagUpper" tone="faint" style={{ letterSpacing: 1.5 }}>

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import analysis, fields, health, surveys
+from app.routers import analysis, auth, fields, health, surveys, users
 from app.services import job_runner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -21,6 +21,8 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(fields.router)
 app.include_router(surveys.router)
 app.include_router(analysis.router)

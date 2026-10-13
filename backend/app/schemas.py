@@ -4,6 +4,49 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    email: str
+    name: str | None = None
+    role: str
+    is_active: bool = True
+    created_at: datetime
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    user: UserOut
+    token: str  # the mobile app sends it as a Bearer header; the web app uses the cookie
+
+
+class HandoffRedeem(BaseModel):
+    code: str
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class UserCreate(BaseModel):
+    email: str
+    name: str | None = None
+    role: str = "farmer"
+    password: str
+
+
+class UserUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = None  # an admin setting a new password (signs the user out everywhere)
+
+
 class FarmOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -16,11 +59,13 @@ class FieldCreate(BaseModel):
     farm_id: str | None = None
     name: str
     crop_type: str = "soybean"
+    owner_id: str | None = None  # staff creating a field for a farmer
 
 
 class FieldUpdate(BaseModel):
     name: str | None = None
     crop_type: str | None = None
+    owner_id: str | None = None  # staff only: move the field to this farmer's farm
 
 
 class FieldOut(BaseModel):
@@ -37,6 +82,8 @@ class FieldOut(BaseModel):
 
 
 class FieldSummary(FieldOut):
+    owner_id: str | None = None
+    owner_name: str | None = None
     latest_survey_id: str | None = None
     latest_survey_status: str | None = None
     healthy_area_percent: float | None = None
@@ -171,5 +218,6 @@ class ProcessingJobOut(BaseModel):
     current_step: str | None = None
     steps: list[dict[str, Any]] = []
     error_message: str | None = None
+    error_detail: str | None = None  # technical; the web app shows it to staff only
     created_at: datetime | None = None
     updated_at: datetime | None = None

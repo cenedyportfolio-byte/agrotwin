@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app import models
+from app.config import settings
 
 STEPS = [
     "images_uploaded",
@@ -25,15 +26,39 @@ STEPS = [
 ]
 MOSAIC_STEPS = ["generating_orthomosaic", "ai_analysis"]
 ANALYSIS_STEPS = ["ai_analysis"]
+# the detailed map, after the quick one (odm_service)
+DETAILED_STEPS = ["odm_prepare", "odm_reconstruction", "odm_import", "odm_bands", "detailed_analysis", "detailed_ready"]
 
 STEP_LABELS = {
-    "images_uploaded": "Images Uploaded",
-    "metadata_extracted": "Metadata Extracted",
-    "processing_field": "Processing Field",
-    "generating_orthomosaic": "Generating Orthomosaic",
-    "ai_analysis": "AI Analysis",
-    "digital_twin_ready": "Digital Twin Ready",
+    "images_uploaded": "Photos received",
+    "metadata_extracted": "Reading where each photo was taken",
+    "processing_field": "Drawing the field outline",
+    "generating_orthomosaic": "Building the field map",
+    "ai_analysis": "Checking crop health",
+    "digital_twin_ready": "Ready",
+    "odm_prepare": "Getting the photos ready",
+    "odm_reconstruction": "3D reconstruction of the field (the long part)",
+    "odm_import": "Drawing the detailed map",
+    "odm_bands": "Lining up the crop-health camera",
+    "detailed_analysis": "Checking crop health on the detailed map",
+    "detailed_ready": "Detailed map ready",
 }
+
+
+class FlightProblem(ValueError):
+    """Something about the flight itself that the farmer can fix next time;
+    its message is shown to them as it is (`detail`, if any, to staff)."""
+
+    def __init__(self, message: str, detail: str | None = None):
+        super().__init__(message)
+        self.detail = detail
+
+
+# shown instead of an unexpected error's text (which staff still see)
+UNEXPECTED_FAILURE = ("Something went wrong while making the map. It is not something you did — "
+                      "try again later, or ask your AgroTwin contact.")
+DETAILED_FAILURE = ("The detailed map could not be made this time — your quick map is still there. "
+                    "AgroTwin staff can see why.")
 
 # The step in progress maps to one of §21's named states.
 # generating_orthomosaic is the direct-georeferencing quick mosaic
@@ -77,6 +102,20 @@ def is_full_pipeline(job: models.ProcessingJob) -> bool:
     return [s["key"] for s in json.loads(job.steps_json or "[]")] == STEPS
 
 
+def is_detailed(job: models.ProcessingJob) -> bool:
+    return [s["key"] for s in json.loads(job.steps_json or "[]")] == DETAILED_STEPS
+
+
+def set_step_note(db: Session, job: models.ProcessingJob, step_key: str, note: str) -> None:
+    """A line of progress under a long step ("matching the photos, stage 4 of 13")."""
+    steps = json.loads(job.steps_json or "[]")
+    for step in steps:
+        if step["key"] == step_key:
+            step["note"] = note
+    job.steps_json = json.dumps(steps)
+    db.commit()
+
+
 def queue(db: Session, job: models.ProcessingJob) -> None:
     job.status = "QUEUED"
     job.error_message = None
@@ -85,7 +124,7 @@ def queue(db: Session, job: models.ProcessingJob) -> None:
 
 def start(db: Session, job: models.ProcessingJob) -> None:
     step = job.current_step
-    job.status = STEP_STATUS[step] if step and step != "images_uploaded" else "PROCESSING"
+    job.status = STEP_STATUS.get(step, "PROCESSING") if step and step != "images_uploaded" else "PROCESSING"
     db.commit()
 
 
@@ -97,12 +136,12 @@ def mark_step_complete(db: Session, job: models.ProcessingJob, step_key: str) ->
 
     next_step = next((s["key"] for s in steps if s["status"] == "pending"), None)
     job.current_step = next_step
-    job.status = "COMPLETED" if next_step is None else STEP_STATUS[next_step]
+    job.status = "COMPLETED" if next_step is None else STEP_STATUS.get(next_step, "PROCESSING")
     job.steps_json = json.dumps(steps)
     db.flush()
 
 
-def mark_failed(db: Session, job: models.ProcessingJob, error: str) -> None:
+def mark_failed(db: Session, job: models.ProcessingJob, error: str, detail: str | None = None) -> None:
     steps = json.loads(job.steps_json or "[]")
     for step in steps:
         if step["key"] == job.current_step:
@@ -110,6 +149,7 @@ def mark_failed(db: Session, job: models.ProcessingJob, error: str) -> None:
     job.steps_json = json.dumps(steps)
     job.status = "FAILED"
     job.error_message = error[:2000]
+    job.error_detail = detail[:4000] if detail else None
     db.flush()
 
 
@@ -121,6 +161,7 @@ def job_to_dict(job: models.ProcessingJob) -> dict:
         "current_step": job.current_step,
         "steps": json.loads(job.steps_json or "[]"),
         "error_message": job.error_message,
+        "error_detail": job.error_detail,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
     }
@@ -198,6 +239,9 @@ def run_full_pipeline(db: Session, job: models.ProcessingJob) -> None:
     survey.survey_date = survey.survey_date or (min(captured) if captured else datetime.now(timezone.utc))
     survey.status = "COMPLETED"
     _complete(db, job, "digital_twin_ready")
+    from app.services import notify_service
+
+    notify_service.map_ready(survey, detailed=False)
 
 
 def run_mosaic_job(db: Session, job: models.ProcessingJob) -> None:
@@ -205,7 +249,8 @@ def run_mosaic_job(db: Session, job: models.ProcessingJob) -> None:
 
     survey = job.survey
     if not _build_mosaics_and_tiles(db, survey):
-        raise ValueError("Not enough nadir, GPS-tagged frames to build a mosaic")
+        raise FlightProblem("Not enough photos were taken straight down with a GPS position to make a map. "
+                            "Fly a mapping (grid) mission with the camera pointing straight down — see How to fly.")
     _complete(db, job, "generating_orthomosaic")
     analyze_survey(db, survey, survey.field)
     _complete(db, job, "ai_analysis")
@@ -217,5 +262,39 @@ def run_analysis_job(db: Session, job: models.ProcessingJob) -> None:
     survey = job.survey
     # frames measured by an earlier run keep their stats; only new frames are measured
     if analyze_survey(db, survey, survey.field) is None:
-        raise ValueError("Not enough geotagged images to compute an analysis")
+        raise FlightProblem("Too few photos have a GPS position to check the crop. Upload the original photos from "
+                            "the drone's memory card — see How to fly.")
     _complete(db, job, "ai_analysis")
+
+
+def run_detailed_pipeline(db: Session, job: models.ProcessingJob) -> None:
+    """OpenDroneMap on the survey's RGB photos (hours), then the same products
+    as a hand-imported run: detailed orthophoto, elevation, 3D model, band
+    orthophotos on its cameras, GCP targets, and the analysis on the best map.
+    The quick results stay in place until this succeeds."""
+    from app.services import notify_service, odm_service
+    from app.services.analysis_service import analyze_survey
+
+    survey = job.survey
+    project, chosen = odm_service.prepare(survey)
+    if len(chosen) < settings.odm_min_photos:
+        raise FlightProblem(f"Only {len(chosen)} photos have a GPS position — too few for a detailed map.")
+    _complete(db, job, "odm_prepare")
+
+    args = odm_service.odm_args(chosen)
+    odm_service.run(survey, project, args,
+                    lambda i, n, words: set_step_note(db, job, "odm_reconstruction", f"{words} (stage {i} of {n})"))
+    _complete(db, job, "odm_reconstruction")
+
+    odm_service.import_run(db, survey, project, mesh=settings.odm_build_3d)
+    _complete(db, job, "odm_import")
+
+    db.refresh(survey)
+    build_photogrammetry_products(db, survey)
+    _complete(db, job, "odm_bands")
+
+    db.refresh(survey)
+    analyze_survey(db, survey, survey.field)
+    _complete(db, job, "detailed_analysis")
+    _complete(db, job, "detailed_ready")
+    notify_service.map_ready(survey, detailed=True)

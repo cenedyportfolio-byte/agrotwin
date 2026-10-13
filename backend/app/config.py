@@ -10,7 +10,9 @@ os.environ.setdefault("GDAL_NUM_THREADS", "ALL_CPUS")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 AGROTWIN_ROOT = BACKEND_DIR.parent
-DATA_DIR = AGROTWIN_ROOT / "data"
+# AGROTWIN_DATA_DIR moves all data (database, uploads, maps) elsewhere, e.g. a
+# big disk on the server; every folder below follows it
+DATA_DIR = Path(os.environ.get("AGROTWIN_DATA_DIR") or AGROTWIN_ROOT / "data")
 
 
 def _default_raw_data_root() -> Path:
@@ -73,6 +75,33 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:14b-instruct-q4_K_M"
     ollama_timeout_s: float = 90.0
+
+    # Sign-in (app/auth.py). Farmers mostly use phones: a long session saves
+    # them typing a password in the field. Set AGROTWIN_COOKIE_SECURE=true
+    # once the server is behind https, so the cookie is never sent in clear.
+    session_days: int = 60
+    session_cookie: str = "agrotwin_session"
+    cookie_secure: bool = False
+
+    # Detailed map (app/services/odm_service.py): after the quick map, OpenDroneMap
+    # runs in Docker on the RGB photos and its results replace the quick ones.
+    # Off by default (a laptop may lack Docker or the hours); on for the server.
+    odm_enabled: bool = False
+    odm_image: str = "opendronemap/odm:latest"  # opendronemap/odm:gpu with odm_gpus on an NVIDIA server
+    odm_gpus: bool = False  # docker --gpus all (needs the NVIDIA Container Toolkit)
+    odm_min_photos: int = 20  # fewer cannot make a map worth hours of processing
+    odm_timeout_hours: float = 12.0
+    odm_build_3d: bool = True  # also the 3D reality mesh and point cloud for the 3D view
+
+    # Optional e-mail when a map is ready (no server: no e-mail). public_url is
+    # the address farmers open, for the link in the message.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "AgroTwin <no-reply@localhost>"
+    smtp_starttls: bool = True
+    public_url: str = "http://localhost:3000"
 
     class Config:
         env_prefix = "AGROTWIN_"

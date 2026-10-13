@@ -51,7 +51,7 @@ export default function SettingsScreen() {
       <ScreenHeader title="Settings" />
       <View style={styles.body}>
         <View style={{ marginBottom: 20 }}>
-          <SectionHeader title="AgroTwin server" meta="Computer running the backend and web app" />
+          <SectionHeader title="AgroTwin server" meta="The address your AgroTwin contact gave you" />
           <Blueprint>
             <AppText variant="caption" tone="muted">
               API address (FastAPI, port 8000)
@@ -121,12 +121,16 @@ export default function SettingsScreen() {
 
         <View style={{ marginBottom: 20 }}>
           <Disclosure showLabel="How to find the right address" hideLabel="Hide address help">
+            <KeyValueRow label="University server" value="https://<its address> in both boxes" mono />
+            <AppText variant="caption" tone="muted" style={{ marginTop: 8, marginBottom: 8 }}>
+              For development on a laptop instead:
+            </AppText>
             <KeyValueRow label="Android Emulator" value="http://10.0.2.2:8000" mono />
             <KeyValueRow label="Physical phone" value="http://<laptop LAN IP>:8000" mono />
             <KeyValueRow label="Laptop LAN IP" value="ipconfig (Windows) / ip addr (Linux)" />
             <KeyValueRow label="Backend must listen on" value="0.0.0.0, not 127.0.0.1" last />
             <AppText variant="caption" tone="muted" style={{ marginTop: 8 }}>
-              Both devices need to be on the same Wi-Fi network and the laptop firewall must allow ports 8000 and 3000. Details in mobile/README.md.
+              On a laptop both devices need the same Wi-Fi network and the firewall must allow ports 8000 and 3000. Details in mobile/README.md.
             </AppText>
           </Disclosure>
         </View>

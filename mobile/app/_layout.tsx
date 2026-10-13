@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
@@ -10,11 +10,24 @@ import { Barlow_700Bold } from "@expo-google-fonts/barlow/700Bold";
 import { BarlowCondensed_600SemiBold } from "@expo-google-fonts/barlow-condensed/600SemiBold";
 import { useTheme } from "@/hooks/useTheme";
 import { AppProviders } from "@/providers/AppProviders";
+import { useAuth } from "@/providers/AuthProvider";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/** Signed out: only the sign-in screen and the server address are reachable. */
+function useSignInGate() {
+  const { ready, isAuthenticated } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+  useEffect(() => {
+    if (!ready || isAuthenticated) return;
+    if (segments[0] !== "login" && segments[0] !== "settings") router.replace("/login");
+  }, [ready, isAuthenticated, segments, router]);
+}
+
 function RootStack() {
   const { colors, isDark } = useTheme();
+  useSignInGate();
   return (
     <>
       <StatusBar style={isDark ? "light" : "dark"} />
@@ -27,6 +40,7 @@ function RootStack() {
         }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="login" options={{ animation: "fade" }} />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="map/[surveyId]" options={{ animation: "fade" }} />
         <Stack.Screen name="twin/[surveyId]" options={{ animation: "fade" }} />

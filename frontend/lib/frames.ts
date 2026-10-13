@@ -26,18 +26,19 @@ export const INDEX_LABEL: Record<IndexKey, string> = {
   gndvi: "GNDVI",
 };
 
+/** How the crop health was measured, in a farmer's words (the detail is in METHOD_DESCRIPTION). */
 export const METHOD_LABEL: Record<string, string> = {
-  ndvi_map: "NDVI map (multispectral, 5 m cells)",
-  exg_map: "Excess Green map (RGB, 5 m cells)",
-  ndvi: "NDVI per frame (multispectral)",
-  exg: "Excess Green per frame (RGB)",
+  ndvi_map: "Crop-health camera",
+  exg_map: "Photo greenness",
+  ndvi: "Crop-health camera, per photo",
+  exg: "Photo greenness, per photo",
 };
 
 export const METHOD_DESCRIPTION: Record<string, string> = {
-  ndvi_map: "Vegetation cover measured on the georeferenced NDVI mosaic in 5 m cells — true area shares.",
-  exg_map: "Vegetation cover measured on the georeferenced RGB photo map in 5 m cells (Excess Green Index) — true area shares.",
-  ndvi: "Vegetation cover measured per photo from the NIR/Red bands; overlapping photos are not deduplicated.",
-  exg: "Vegetation cover measured per photo with the RGB Excess Green Index; overlapping photos are not deduplicated.",
+  ndvi_map: "Measured with the drone's near-infrared crop-health camera (NDVI) on the field map, in 5 m (16 ft) squares.",
+  exg_map: "Measured from how green the normal photos are (Excess Green index) on the field map, in 5 m (16 ft) squares. A drone with a crop-health (multispectral) camera measures more reliably.",
+  ndvi: "Measured photo by photo with the near-infrared crop-health camera (NDVI); overlapping photos count twice.",
+  exg: "Measured photo by photo from how green the normal photos are (Excess Green index); overlapping photos count twice.",
 };
 
 export interface Frame {

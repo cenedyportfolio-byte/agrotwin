@@ -41,6 +41,9 @@ _DJI_TAIL = re.compile(r"/(DJI_[^/]+/[^/]+)$")
 
 def _reroots() -> tuple[tuple[str, Path], ...]:
     return (
+        # a checkout under another name, or the data on its own disk (AGROTWIN_DATA_DIR)
+        ("/frontend/public/", AGROTWIN_ROOT / "frontend" / "public"),
+        ("/data/", settings.data_dir),
         ("/agrotwin/", AGROTWIN_ROOT),
         (f"/{AGROTWIN_ROOT.name}/", AGROTWIN_ROOT),
         ("/Development/Agro/", settings.raw_data_root),
