@@ -82,9 +82,10 @@ def wants_detailed_map(survey: models.Survey) -> bool:
     return settings.odm_enabled and not has_detailed_map(survey) and len(photos(survey)) >= settings.odm_min_photos
 
 
-def odm_args(images: list[models.SurveyImage]) -> list[str]:
+def odm_args(images: list[models.SurveyImage], gcp: bool = False) -> list[str]:
     """ODM options: those of the Ditty Road run that the band orthophotos were
-    validated on, with medium point-cloud quality to halve the meshing time."""
+    validated on, with medium point-cloud quality to halve the meshing time;
+    `gcp`: the project has the farmer's gcp_list.txt (targets marked in the photos)."""
     args = ["--dsm", "--dtm", "--orthophoto-resolution", "1", "--dem-resolution", "5",
             "--feature-quality", "high", "--pc-quality", "medium", "--skip-report", "--optimize-disk-space"]
     if not settings.odm_build_3d:
@@ -93,7 +94,20 @@ def odm_args(images: list[models.SurveyImage]) -> list[str]:
     fixed = sum(1 for img in images if img.rtk_fix == "FIXED")
     if images and fixed >= 0.8 * len(images):
         args += ["--gps-accuracy", "0.05"]
+    if gcp:
+        args += ["--gcp", "/datasets/code/gcp_list.txt"]
     return args
+
+
+def farmer_gcp_list(survey: models.Survey) -> Path | None:
+    """An RTK gcp_list.txt the farmer uploaded (gcp_file_service): ODM uses it itself."""
+    folder = settings.surveys_dir / survey.id / "gcp"
+    try:
+        meta = json.loads((folder / "gcp.json").read_text())
+    except (OSError, ValueError):
+        return None
+    path = folder / "gcp_list.txt"
+    return path if meta.get("format") == "odm" and meta.get("rtk") and path.exists() else None
 
 
 def prepare(survey: models.Survey) -> tuple[Path, list[models.SurveyImage]]:
@@ -107,6 +121,11 @@ def prepare(survey: models.Survey) -> tuple[Path, list[models.SurveyImage]]:
     for stale in images_dir.iterdir():
         if stale.name not in wanted:
             stale.unlink()
+    gcp_list = farmer_gcp_list(survey)
+    if gcp_list:
+        shutil.copy2(gcp_list, project / "gcp_list.txt")
+    else:
+        (project / "gcp_list.txt").unlink(missing_ok=True)
     for img in chosen:
         dst = images_dir / img.filename
         if dst.exists() and dst.stat().st_size == img.path.stat().st_size:
@@ -258,6 +277,7 @@ def import_run(db: Session, survey: models.Survey, odm: Path | None = None, *, t
         shutil.copy2(src, dst)
         _register(db, survey, asset_type, dst, "tif", extract_bounds_geojson(dst))
 
+    db.commit()  # the mesh and point-cloud tiling below takes minutes: don't hold the write lock
     ground_h = _ground_h(rasters["dtm"], survey.field) if rasters["dtm"].exists() else None
     log.info("odm: ground height in ODM datum: %s", ground_h)
     mesh_ts = PUBLIC_MODELS / survey.id / "odm-model" / "tileset.json"
@@ -267,6 +287,7 @@ def import_run(db: Session, survey: models.Survey, odm: Path | None = None, *, t
         mesh_ts = tile_mesh(survey.id, depth=3, tex_px=2048, draco=False, ground_h=ground_h)
     if mesh_ts.exists():
         _register(db, survey, "model3d", mesh_ts, "json", None)
+        db.commit()
     laz = odm / "odm_georeferencing" / "odm_georeferenced_model.laz"
     if mesh and laz.exists():
         from scripts.tile_points import build as tile_points

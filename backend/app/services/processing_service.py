@@ -26,6 +26,8 @@ STEPS = [
 ]
 MOSAIC_STEPS = ["generating_orthomosaic", "ai_analysis"]
 ANALYSIS_STEPS = ["ai_analysis"]
+# a GCP file added, replaced or removed: line the detailed map up again
+GCP_STEPS = ["gcp_align", "ai_analysis"]
 # the detailed map, after the quick one (odm_service)
 DETAILED_STEPS = ["odm_prepare", "odm_reconstruction", "odm_import", "odm_bands", "detailed_analysis", "detailed_ready"]
 
@@ -36,6 +38,7 @@ STEP_LABELS = {
     "generating_orthomosaic": "Building the field map",
     "ai_analysis": "Checking crop health",
     "digital_twin_ready": "Ready",
+    "gcp_align": "Lining the map up with your surveyed points",
     "odm_prepare": "Getting the photos ready",
     "odm_reconstruction": "3D reconstruction of the field (the long part)",
     "odm_import": "Drawing the detailed map",
@@ -193,12 +196,17 @@ def _build_mosaics_and_tiles(db: Session, survey: models.Survey) -> list[models.
 
 def build_photogrammetry_products(db: Session, survey: models.Survey) -> None:
     """With an imported OpenDroneMap run: the band orthophotos on its camera
-    solution (GPU), their tiles, and the GCP targets the field boundary is drawn
-    around. Without one, nothing — the quick mosaics stay the products."""
-    from app.services import band_ortho_service, gcp_service
+    solution (GPU), their tiles, the GCP targets the field boundary is drawn
+    around, and the map lined up with the farmer's surveyed points (if any).
+    Without one, nothing — the quick mosaics stay the products."""
+    from app.services import band_ortho_service, gcp_correction_service, gcp_service
     from app.services.survey_service import update_field_boundary_from_images
     from app.services.tile_service import build_survey_tiles
 
+    # the band maps are built on ODM's cameras: start from the map as ODM made it
+    stale = gcp_correction_service.restore(db, survey)
+    db.commit()
+    db.refresh(survey)
     created = band_ortho_service.build_band_orthos(db, survey)
     if created:
         db.commit()
@@ -209,7 +217,11 @@ def build_photogrammetry_products(db: Session, survey: models.Survey) -> None:
         db.flush()
         db.refresh(survey)
         update_field_boundary_from_images(db, survey.field, survey.images, survey.gcps)
+        db.commit()  # before the slow check below: never hold SQLite's write lock through GPU work
         band_ortho_service.update_qa_gcps(survey)
+    db.commit()
+    db.refresh(survey)
+    gcp_correction_service.align(db, survey, stale - (set(band_ortho_service.TILE_LAYERS) if created else set()))
     db.commit()
 
 
@@ -281,7 +293,7 @@ def run_detailed_pipeline(db: Session, job: models.ProcessingJob) -> None:
         raise FlightProblem(f"Only {len(chosen)} photos have a GPS position — too few for a detailed map.")
     _complete(db, job, "odm_prepare")
 
-    args = odm_service.odm_args(chosen)
+    args = odm_service.odm_args(chosen, gcp=(project / "gcp_list.txt").exists())
     odm_service.run(survey, project, args,
                     lambda i, n, words: set_step_note(db, job, "odm_reconstruction", f"{words} (stage {i} of {n})"))
     _complete(db, job, "odm_reconstruction")
@@ -298,3 +310,20 @@ def run_detailed_pipeline(db: Session, job: models.ProcessingJob) -> None:
     _complete(db, job, "detailed_analysis")
     _complete(db, job, "detailed_ready")
     notify_service.map_ready(survey, detailed=True)
+
+
+def run_gcp_job(db: Session, job: models.ProcessingJob) -> None:
+    """A GCP file was added, replaced or removed: from the map as it was made,
+    line it up with the surveyed points now on file, then check the crop again."""
+    from app.services import gcp_correction_service
+    from app.services.analysis_service import analyze_survey
+
+    survey = job.survey
+    stale = gcp_correction_service.restore(db, survey)
+    db.commit()
+    db.refresh(survey)
+    gcp_correction_service.align(db, survey, stale)
+    _complete(db, job, "gcp_align")
+    db.refresh(survey)
+    analyze_survey(db, survey, survey.field)
+    _complete(db, job, "ai_analysis")

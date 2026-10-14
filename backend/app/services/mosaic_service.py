@@ -636,16 +636,20 @@ def build_quick_mosaics(db: Session, survey: models.Survey) -> list[models.Surve
     epsg = utm_epsg_for(lon0, lat0)
     out_dir = storage_service.survey_dir(survey.id) / "outputs"
 
-    for old in [a for a in survey.assets if a.source == "direct_georeferencing"]:
-        db.delete(old)
-    db.flush()
+    db.commit()  # the gimbal backfill: nothing may hold SQLite's write lock during the GPU work
 
-    created = []
+    # build first, then swap the assets: deleting the old ones first would hold
+    # the write lock (and leave the survey without a map) for the whole build
     rgb = build_rgb_mosaic(survey, out_dir / "orthomosaic_quick.tif", epsg)
     if rgb:
-        created.append(_register(db, survey, "orthomosaic", out_dir / "orthomosaic_quick.tif", extract_bounds_geojson))
         log.info("rgb mosaic done: %s", rgb)
-    for idx, info in build_index_mosaics(survey, out_dir, epsg).items():
+    indices = build_index_mosaics(survey, out_dir, epsg)
+    for old in [a for a in survey.assets if a.source == "direct_georeferencing"]:
+        db.delete(old)
+    created = []
+    if rgb:
+        created.append(_register(db, survey, "orthomosaic", out_dir / "orthomosaic_quick.tif", extract_bounds_geojson))
+    for idx, info in indices.items():
         created.append(_register(db, survey, idx, Path(info["path"]), extract_bounds_geojson))
         log.info("%s mosaic done: %s", idx, info)
     db.flush()

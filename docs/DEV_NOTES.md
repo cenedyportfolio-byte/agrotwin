@@ -198,3 +198,15 @@ other GPU extras. Two things to know:
   imported, so nothing lands on C:. Pretrained weights, if ever downloaded
   by name, go to the current working directory — download them into
   `.cache/` explicitly.
+
+## SQLite: never hold the write lock through long work (2026-10-14)
+
+SQLite has one writer at a time; the session takes the write lock at the first
+`flush()`/`commit()` that writes and keeps it until the commit. A job that
+flushes and then tiles, builds a mosaic or measures crop health for minutes
+makes every other writer wait 30 s and fail with "database is locked" — the
+2026-10-14 audit caught farmers' sign-ins failing that way during a
+detailed-map job. Rule: do the slow work first, then write and commit; or
+commit before the slow part (`SessionLocal` has autoflush off, so plain
+attribute changes do not take the lock). `tests/test_db_locks.py` takes the
+lock from a second connection inside each slow step and fails if it cannot.

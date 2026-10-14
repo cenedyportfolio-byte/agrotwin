@@ -64,6 +64,30 @@ quick map; an interrupted run resumes after a restart. Staff can start one
 by hand (a flight's **Detailed Map** button); without Docker the quick map
 is the result. Optional e-mail when a map is ready: `AGROTWIN_SMTP_*`.
 
+## Ground control points (optional)
+
+With the photos (upload page, "Add ground control points") or later on the
+flight's page, a farmer can add the surveyed positions of the checkerboard
+targets they laid out: a CSV from their GPS (latitude/longitude, or
+easting/northing in UTM / State Plane with its EPSG code; feet are converted)
+or OpenDroneMap's `gcp_list.txt`. AgroTwin pairs each point with the target
+it finds in the detailed map by itself (`gcp_file_service`,
+`gcp_correction_service`):
+
+- **Measured with RTK** (ticked): the detailed map — orthophoto, elevation,
+  band and index maps — is moved onto the points (a shift, plus a small turn
+  and stretch when they are spread out), by rewriting the maps'
+  georeferencing, not their pixels. The original is kept, so replacing or
+  removing the file restores it; points that disagree are left out and
+  shown, and an implausible fit is refused. An RTK `gcp_list.txt` (targets
+  already marked in the photos) is also given to OpenDroneMap itself.
+- **Handheld GPS** (unticked): the points are only compared and shown —
+  they are less accurate than the map.
+
+The flight page lists every point with its target and the distance before
+(and after) lining up. A file whose points are kilometres from the photos is
+refused with a hint (wrong coordinate system, latitude/longitude swapped).
+
 ## Accounts and sign-in
 
 Everyone signs in. Three roles:

@@ -367,6 +367,7 @@ def build_survey_tiles(db, survey, layers: tuple[str, ...] = ("orthomosaic", "nd
         )
         db.add(asset)
         created.append(asset)
+        db.commit()  # don't hold SQLite's write lock while the next layer is tiled
         log.info("registered xyz asset %s (z%d..%d)", layer, meta["minzoom"], meta["maxzoom"])
     db.flush()
     return created

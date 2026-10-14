@@ -100,6 +100,40 @@ export interface GroundControlPoint {
   score: number | null;
   /** Side length of the checkerboard, in metres (null on rows detected before sizes were stored). */
   size_m: number | null;
+  /** source "surveyed" (the farmer's GCP file): measured with RTK — such points move the detailed map. */
+  rtk?: boolean | null;
+}
+
+/** What was read from a GCP file (POST /api/surveys/{id}/gcp-file). */
+export interface GcpFileInfo {
+  format: "csv-latlon" | "csv-projected" | "odm";
+  crs: string;
+  rtk: boolean;
+  notes: string[];
+  odm_observations: number;
+  queued?: boolean;
+  filename?: string;
+  points: { name: string; lat: number; lon: number; elevation_m: number | null }[];
+}
+
+/** How the detailed map compares with the surveyed points (gcp_correction_service). */
+export interface GcpCheck {
+  file: GcpFileInfo | null;
+  report: {
+    rtk: boolean;
+    status: "none" | "waiting" | "no_match" | "check_only" | "applied" | "aligned" | "rejected";
+    message: string;
+    model: { shift_m: number; rotation_deg: number; scale: number; rms_m: number; points_used: number } | null;
+    points: {
+      name: string;
+      lat: number;
+      lon: number;
+      used: boolean;
+      matched: string | null;
+      before_m: number | null;
+      after_m: number | null;
+    }[];
+  } | null;
 }
 
 /** The ~17 cm markers (M1, M2, …), as opposed to the 40–60 cm GCPs. */

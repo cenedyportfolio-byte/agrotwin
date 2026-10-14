@@ -11,6 +11,7 @@ import { Globe2, ArrowRight, Trash2, Loader2, UploadCloud, Pencil, Check, X } fr
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMe } from "@/lib/useMe";
+import { NotAvailable } from "@/components/layout/NotAvailable";
 import { CROP_TYPES, describeZone, flightStatusLabel, formatArea, sortSpots } from "@/lib/farm";
 import { HealthBar } from "@/components/dashboard/HealthBar";
 import { SpotList } from "@/components/dashboard/SpotList";
@@ -22,7 +23,7 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const qc = useQueryClient();
 
-  const { data: field } = useQuery({ queryKey: ["field", id], queryFn: () => api.getField(id) });
+  const { data: field, isError: fieldMissing } = useQuery({ queryKey: ["field", id], queryFn: () => api.getField(id) });
   const { data: surveys } = useQuery({
     queryKey: ["field-surveys", id],
     queryFn: () => api.listFieldSurveys(id),
@@ -57,6 +58,14 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
       router.push("/fields");
     },
   });
+
+  if (fieldMissing) {
+    return (
+      <AppShell>
+        <NotAvailable what="field" />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

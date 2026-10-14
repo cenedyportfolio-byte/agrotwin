@@ -3,7 +3,7 @@ import mimetypes
 import shutil
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -228,6 +228,121 @@ def make_detailed_map(survey_id: str, db: Session = Depends(get_db)):
     except job_runner.JobAlreadyRunning as exc:
         raise HTTPException(409, BUSY) from exc
     return processing_service.job_to_dict(job)
+
+
+def _flight_centre(survey: models.Survey) -> tuple[float, float] | None:
+    pts = [(i.lat, i.lon) for i in survey.images if i.lat is not None and i.lon is not None]
+    if pts:
+        return sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+    f = survey.field
+    return (f.center_lat, f.center_lon) if f and f.center_lat is not None else None
+
+
+@router.post("/gcp-file/check")
+def check_gcp_file(file: UploadFile, epsg: str | None = Form(None), field_id: str | None = Form(None),
+                   user: models.User = Depends(auth.current_user), db: Session = Depends(get_db)):
+    """Reads a GCP file before there is a flight to attach it to (the upload page):
+    what it contains, or why it cannot be used. `field_id`: compare with that field."""
+    from app.services import gcp_file_service
+
+    near = None
+    if field_id:
+        field = auth.visible_field(db, user, field_id)
+        if field.center_lat is not None:
+            near = (field.center_lat, field.center_lon)
+    try:
+        parsed = gcp_file_service.parse(file.file.read(), epsg, near)
+        if near:
+            gcp_file_service.check_near(parsed.points, *near)
+    except gcp_file_service.GcpFileError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"format": parsed.format, "crs": parsed.crs, "rtk": False, "notes": parsed.notes,
+            "odm_observations": parsed.odm_observations,
+            "points": [{"name": p.name, "lat": p.lat, "lon": p.lon, "elevation_m": p.elevation_m} for p in parsed.points]}
+
+
+@router.post("/{survey_id}/gcp-file")
+def upload_gcp_file(survey_id: str, file: UploadFile, rtk: bool = Form(False), epsg: str | None = Form(None),
+                    dry_run: bool = Form(False), db: Session = Depends(get_db)):
+    """The surveyed positions of the flight's ground targets (CSV or
+    OpenDroneMap gcp_list.txt — see gcp_file_service). With `dry_run` only
+    reads and checks the file. Otherwise replaces the flight's surveyed points
+    and, when it has a detailed map, lines that map up with them (RTK) or
+    compares (handheld) in a background job."""
+    from app.services import gcp_correction_service, gcp_file_service
+
+    survey = _get_survey(db, survey_id)
+    near = _flight_centre(survey)
+    try:
+        parsed = gcp_file_service.parse(file.file.read(), epsg, near)
+        if near:
+            gcp_file_service.check_near(parsed.points, *near)
+    except gcp_file_service.GcpFileError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    out = {
+        "format": parsed.format, "crs": parsed.crs, "rtk": rtk, "notes": parsed.notes,
+        "odm_observations": parsed.odm_observations, "queued": False,
+        "points": [{"name": p.name, "lat": p.lat, "lon": p.lon, "elevation_m": p.elevation_m} for p in parsed.points],
+    }
+    if dry_run:
+        return out
+    if processing_service.is_running(processing_service.latest_job(survey)):
+        raise HTTPException(409, BUSY)
+
+    for old in [g for g in survey.gcps if g.source == "surveyed"]:
+        db.delete(old)
+    for p in parsed.points:
+        db.add(models.GroundControlPoint(survey_id=survey.id, name=p.name, lat=p.lat, lon=p.lon,
+                                         height_m=p.elevation_m, source="surveyed", rtk=rtk))
+    folder = storage_service.survey_dir(survey.id) / "gcp"
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+    file.file.seek(0)
+    (folder / ("gcp_list.txt" if parsed.format == "odm" else _safe_filename(file.filename))).write_bytes(file.file.read())
+    (folder / "gcp.json").write_text(json.dumps({k: v for k, v in out.items() if k != "queued"}
+                                                | {"filename": file.filename}, indent=2))
+    db.commit()
+    db.refresh(survey)
+    if gcp_correction_service.correctable(survey):
+        job_runner.enqueue(db, survey, processing_service.GCP_STEPS, processing_service.run_gcp_job)
+        out["queued"] = True
+    return out
+
+
+@router.delete("/{survey_id}/gcp-file")
+def delete_gcp_file(survey_id: str, db: Session = Depends(get_db)):
+    """Forgets the surveyed points; a map moved onto them goes back to where it was made."""
+    from app.services import gcp_correction_service
+
+    survey = _get_survey(db, survey_id)
+    if processing_service.is_running(processing_service.latest_job(survey)):
+        raise HTTPException(409, BUSY)
+    for old in [g for g in survey.gcps if g.source == "surveyed"]:
+        db.delete(old)
+    folder = storage_service.survey_dir(survey.id) / "gcp"
+    if folder.exists():
+        shutil.rmtree(folder)
+    db.commit()
+    db.refresh(survey)
+    gcp_correction_service.report_path(survey).unlink(missing_ok=True)
+    queued = bool(gcp_correction_service.correctable(survey))
+    if queued:
+        job_runner.enqueue(db, survey, processing_service.GCP_STEPS, processing_service.run_gcp_job)
+    return {"deleted": True, "queued": queued}
+
+
+@router.get("/{survey_id}/gcp-check")
+def get_gcp_check(survey_id: str, db: Session = Depends(get_db)):
+    """The flight's GCP file (what was read from it) and how the map compares with it."""
+    from app.services import gcp_correction_service
+
+    survey = _get_survey(db, survey_id)
+    meta = storage_service.survey_dir(survey.id) / "gcp" / "gcp.json"
+    return {
+        "file": json.loads(meta.read_text()) if meta.exists() else None,
+        "report": gcp_correction_service.load_report(survey),
+    }
 
 
 @router.get("/{survey_id}/job", response_model=schemas.ProcessingJobOut | None)

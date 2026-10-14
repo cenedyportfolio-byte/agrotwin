@@ -22,6 +22,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useProcessingJob } from "@/lib/hooks/useProcessingJob";
 import { notifyHost, useHostBridge, useIsEmbedded } from "@/lib/hostBridge";
 import type { LayerKey } from "@/lib/digitalTwinStore";
+import { NotAvailable } from "@/components/layout/NotAvailable";
 
 const CesiumViewer = dynamic(() => import("@/components/cesium/CesiumViewer"), {
   ssr: false,
@@ -37,7 +38,7 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { data: field } = useQuery({ queryKey: ["field", id], queryFn: () => api.getField(id) });
+  const { data: field, isError: fieldMissing } = useQuery({ queryKey: ["field", id], queryFn: () => api.getField(id) });
   const { data: surveys } = useQuery({
     queryKey: ["field-surveys", id],
     queryFn: () => api.listFieldSurveys(id),
@@ -170,6 +171,14 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
     () => selectViewerAssets(assets, (assetId) => api.assetPreviewUrl(surveyId as string, assetId)),
     [assets, surveyId]
   );
+
+  if (fieldMissing) {
+    return (
+      <div className="min-h-screen bg-background px-4">
+        <NotAvailable what="field" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-screen w-full">

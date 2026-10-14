@@ -118,7 +118,10 @@ def _classify_zone_type(vegetation_fraction: float) -> str:
 
 def _new_result(db: Session, survey: models.Survey, tiers: Tiers, method: str) -> models.AnalysisResult:
     total = len(tiers.ratio)
+    # the id is given here, not by a flush: a flush takes SQLite's write lock,
+    # which would then be held through the slower measurements that follow
     result = models.AnalysisResult(
+        id=models._uuid(),
         survey_id=survey.id,
         healthy_area_percent=round(100 * int(tiers.healthy.sum()) / total, 1),
         attention_area_percent=round(100 * int(tiers.attention.sum()) / total, 1),
@@ -127,7 +130,6 @@ def _new_result(db: Session, survey: models.Survey, tiers: Tiers, method: str) -
         is_mock=False,
     )
     db.add(result)
-    db.flush()
     return result
 
 
@@ -483,9 +485,7 @@ def _register_output_asset(db: Session, survey: models.Survey, asset_type: str, 
 
     for old in [a for a in survey.assets if a.asset_type == asset_type and a.source == "analysis"]:
         db.delete(old)
-    db.flush()
     db.add(models.SurveyAsset(
         survey_id=survey.id, asset_type=asset_type, file_path=str(path), format="tif",
         bounds_geojson=json.dumps(extract_bounds_geojson(path)), source="analysis",
     ))
-    db.flush()

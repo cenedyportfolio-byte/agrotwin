@@ -57,6 +57,12 @@ export default function FlightGuidePage() {
             If you have black-and-white checkerboard targets, lay a few around the field edges and one in the middle.
             AgroTwin finds them by itself and uses them to check the map lines up. A flight without targets works too.
           </Item>
+          <Item>
+            If you measured the targets with a GPS, add that file with the photos (&ldquo;Add ground control
+            points&rdquo; on the upload page): a CSV from your GPS, or OpenDroneMap&apos;s gcp_list.txt. Points measured
+            with an <strong>RTK</strong> GPS line the detailed map up to the inch — especially useful for a drone without
+            RTK, whose map can be several feet off. Handheld GPS points are only compared.
+          </Item>
         </Section>
 
         <Section icon={UploadCloud} title="Uploading the photos">

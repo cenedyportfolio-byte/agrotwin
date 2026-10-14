@@ -269,7 +269,8 @@ def update_field_boundary_from_images(
     if not points:
         return
 
-    extra = [(g.lon, g.lat) for g in gcps]
+    # a handheld GPS reading can be metres off: only targets found in the map and RTK points count
+    extra = [(g.lon, g.lat) for g in gcps if g.source != "surveyed" or g.rtk]
     boundary, area_ha, center_lat, center_lon = compute_boundary_and_area(
         points, extra, GCP_MARGIN_M if extra else 0.0
     )

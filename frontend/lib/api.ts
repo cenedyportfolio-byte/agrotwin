@@ -5,6 +5,8 @@ import type {
   FieldBoundaryResponse,
   FieldOut,
   FieldSummary,
+  GcpCheck,
+  GcpFileInfo,
   GroundControlPoint,
   ProcessingJob,
   Survey,
@@ -133,6 +135,25 @@ export const api = {
   triggerProcessing: (surveyId: string) => postJson<ProcessingJob>(`/api/surveys/${surveyId}/process`, undefined),
   rebuildMosaic: (surveyId: string) => postJson<ProcessingJob>(`/api/surveys/${surveyId}/mosaic`, undefined),
   makeDetailedMap: (surveyId: string) => postJson<ProcessingJob>(`/api/surveys/${surveyId}/detailed`, undefined),
+  /** Reads (dryRun) or attaches a GCP file: CSV or OpenDroneMap gcp_list.txt. */
+  uploadGcpFile: (surveyId: string, file: File, opts: { rtk: boolean; epsg?: string; dryRun?: boolean }) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("rtk", String(opts.rtk));
+    if (opts.epsg?.trim()) form.append("epsg", opts.epsg.trim());
+    form.append("dry_run", String(!!opts.dryRun));
+    return request<GcpFileInfo>(`/api/surveys/${surveyId}/gcp-file`, { method: "POST", body: form });
+  },
+  checkGcpFile: (file: File, opts: { epsg?: string; fieldId?: string }) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (opts.epsg?.trim()) form.append("epsg", opts.epsg.trim());
+    if (opts.fieldId) form.append("field_id", opts.fieldId);
+    return request<GcpFileInfo>("/api/surveys/gcp-file/check", { method: "POST", body: form });
+  },
+  deleteGcpFile: (surveyId: string) =>
+    request<{ deleted: boolean; queued: boolean }>(`/api/surveys/${surveyId}/gcp-file`, { method: "DELETE" }),
+  getGcpCheck: (surveyId: string) => request<GcpCheck>(`/api/surveys/${surveyId}/gcp-check`),
   recomputeAnalysis: (surveyId: string) => postJson<ProcessingJob>(`/api/analysis/${surveyId}/recompute`, undefined),
   getJob: (surveyId: string) => request<ProcessingJob | null>(`/api/surveys/${surveyId}/job`),
 

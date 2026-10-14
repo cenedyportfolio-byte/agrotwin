@@ -53,8 +53,12 @@ export function GcpPanel({ gcp, onClose }: { gcp: GroundControlPoint; onClose: (
         <div>
           <h3 className="text-sm font-semibold">{gcp.name}</h3>
           <div className="text-[11px] text-muted-foreground">
-            {isMarker(gcp) ? "Small marker" : "Ground control target"}
-            {size}
+            {gcp.source === "surveyed"
+              ? `Surveyed point · ${gcp.rtk ? "RTK" : "handheld GPS"}`
+              : isMarker(gcp)
+                ? "Small marker"
+                : "Ground control target"}
+            {gcp.source === "surveyed" ? "" : size}
           </div>
         </div>
         <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground">
@@ -68,7 +72,11 @@ export function GcpPanel({ gcp, onClose }: { gcp: GroundControlPoint; onClose: (
           {dms(gcp.lat, "N", "S")} {dms(gcp.lon, "E", "W")}
         </div>
         {gcp.height_m != null && (
-          <Row label="Elevation" value={`${gcp.height_m.toFixed(2)} m`} hint="Surface height from the photogrammetry (its own vertical datum)" />
+          <Row
+            label="Elevation"
+            value={`${gcp.height_m.toFixed(2)} m`}
+            hint={gcp.source === "surveyed" ? "From your GCP file" : "Surface height from the photogrammetry (its own vertical datum)"}
+          />
         )}
         <button
           onClick={copy}
@@ -78,7 +86,9 @@ export function GcpPanel({ gcp, onClose }: { gcp: GroundControlPoint; onClose: (
           {copied ? "Copied" : "Copy coordinates"}
         </button>
         <div className="hidden text-[11px] text-muted-foreground sm:block">
-          WGS84, centre of the target as found in the photogrammetric orthophoto.
+          {gcp.source === "surveyed"
+            ? "WGS84, as in your ground control points file."
+            : "WGS84, centre of the target as found in the photogrammetric orthophoto."}
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { CROP_TYPES } from "@/lib/farm";
 import { useMe } from "@/lib/useMe";
 import type { SurveyImage } from "@/lib/types";
+import { GcpFileFields, useGcpFileCheck } from "@/components/surveys/GcpFileFields";
 
 const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000];
 
@@ -52,6 +53,11 @@ export default function UploadPage() {
   const [flightName, setFlightName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  // optional: the surveyed positions of the targets laid out for this flight
+  const [showGcp, setShowGcp] = useState(false);
+  const [gcpFile, setGcpFile] = useState<File | null>(null);
+  const [gcpRtk, setGcpRtk] = useState(false);
+  const [gcpEpsg, setGcpEpsg] = useState("");
 
   // the farmer's (only) field is the usual choice; a new field only when there is none
   const fieldId = fieldChoice ?? (fields && fields.length > 0 ? fields[0].id : "__new__");
@@ -72,8 +78,14 @@ export default function UploadPage() {
     };
   }, [busy]);
 
+  const gcp = useGcpFileCheck(gcpFile, gcpEpsg, (file, epsg) =>
+    api.checkGcpFile(file, { epsg, fieldId: fieldId !== "__new__" ? fieldId : undefined })
+  );
+
   const start = async () => {
     if (!files.length) return setPhase({ kind: "error", message: "Choose the photos of the flight first." });
+    if (gcpFile && (gcp.error || gcp.checking))
+      return setPhase({ kind: "error", message: "Fix or remove the ground control points file first." });
     try {
       let targetFieldId = fieldId;
       if (fieldId === "__new__") {
@@ -107,9 +119,17 @@ export default function UploadPage() {
             "These photos have no GPS position, so they cannot be placed on a map. Use the original files from the drone's memory card — copies from a phone gallery or a messaging app often lose it.",
         });
       }
+      // attached before processing starts, so the detailed map is lined up with it;
+      // if it cannot be (e.g. points far from the photos) the flight page says why
+      let gcpProblem = "";
+      if (gcpFile) {
+        await api
+          .uploadGcpFile(survey.id, gcpFile, { rtk: gcpRtk, epsg: gcpEpsg })
+          .catch((err) => (gcpProblem = (err as Error).message));
+      }
       setPhase({ kind: "starting" });
       await api.triggerProcessing(survey.id);
-      router.push(`/surveys/${survey.id}`);
+      router.push(`/surveys/${survey.id}${gcpProblem ? `?gcp_error=${encodeURIComponent(gcpProblem)}` : ""}`);
     } catch (err) {
       setPhase({ kind: "error", message: (err as Error).message });
     }
@@ -235,6 +255,41 @@ export default function UploadPage() {
               On a phone, choose them in the Files app from the memory card, not from the photo gallery. Use Wi-Fi for a
               big flight, and keep this page open until it says done.
             </p>
+          </div>
+
+          <div>
+            {showGcp || gcpFile ? (
+              <>
+                <label className="text-sm font-medium">
+                  Ground control points <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+                  The surveyed positions of the checkerboard targets you laid out, as your GPS exports them (CSV with
+                  latitude / longitude or easting / northing), or OpenDroneMap&apos;s gcp_list.txt.
+                </p>
+                <GcpFileFields
+                  file={gcpFile}
+                  onFile={setGcpFile}
+                  rtk={gcpRtk}
+                  onRtk={setGcpRtk}
+                  epsg={gcpEpsg}
+                  onEpsg={setGcpEpsg}
+                  info={gcp.info}
+                  error={gcp.error}
+                  checking={gcp.checking}
+                  disabled={busy}
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowGcp(true)}
+                disabled={busy}
+                className="text-sm font-medium text-brand hover:underline"
+              >
+                + Add ground control points (optional)
+              </button>
+            )}
           </div>
 
           <Button size="lg" className="h-11 w-full text-base" onClick={start} disabled={busy}>

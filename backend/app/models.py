@@ -212,7 +212,8 @@ class GroundControlPoint(Base):
     """A ground control target (black/white checkerboard) laid out in the field
     for the flight: a GCP (40-60 cm) or a small marker (~17 cm, named M1, M2, …).
     source="detected": found in the survey's photogrammetric orthophoto
-    (gcp_service), placed as accurately as that orthophoto."""
+    (gcp_service), placed as accurately as that orthophoto; source="surveyed":
+    from the farmer's GCP file (gcp_file_service), `rtk` when centimetre-accurate."""
 
     __tablename__ = "ground_control_points"
 
@@ -225,6 +226,7 @@ class GroundControlPoint(Base):
     source: Mapped[str] = mapped_column(String, default="detected")
     score: Mapped[float | None] = mapped_column(Float, nullable=True)  # target-pattern match, 0..1
     size_m: Mapped[float | None] = mapped_column(Float, nullable=True)  # side length of the pattern matched
+    rtk: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # surveyed with RTK (moves the map)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     survey: Mapped[Survey] = relationship(back_populates="gcps")

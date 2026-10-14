@@ -160,3 +160,10 @@ export function flightStatusLabel(status: string | null | undefined): string {
       return "Processing…";
   }
 }
+
+/** A distance for a US farmer: inches below a foot, feet above. */
+export function formatDistance(m: number | null | undefined): string {
+  if (m == null) return "—";
+  const ft = m * 3.28084;
+  return ft < 1 ? `${(ft * 12).toFixed(1)} in` : `${ft.toFixed(1)} ft`;
+}

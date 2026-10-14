@@ -10,6 +10,8 @@ import { AvailabilityChecklist } from "@/components/surveys/AvailabilityChecklis
 import { ImageLightbox } from "@/components/surveys/ImageLightbox";
 import { ImportAssetPanel } from "@/components/surveys/ImportAssetPanel";
 import { ProcessingProgress } from "@/components/surveys/ProcessingProgress";
+import { GcpCard } from "@/components/surveys/GcpCard";
+import { NotAvailable } from "@/components/layout/NotAvailable";
 import { useProcessingJob } from "@/lib/hooks/useProcessingJob";
 import { useMe } from "@/lib/useMe";
 import { groupFrames, METHOD_DESCRIPTION, METHOD_LABEL } from "@/lib/frames";
@@ -24,7 +26,7 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
   // rebuilds, recomputes and imports of processed data are staff tools
   const { isStaff } = useMe();
 
-  const { data: survey } = useQuery({ queryKey: ["survey", id], queryFn: () => api.getSurvey(id) });
+  const { data: survey, isError: surveyMissing } = useQuery({ queryKey: ["survey", id], queryFn: () => api.getSurvey(id) });
   const { data: images } = useQuery({
     queryKey: ["survey-images", id],
     queryFn: () => api.listSurveyImages(id),
@@ -49,6 +51,7 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
   const searchParams = useSearchParams();
   const linkedFrame = searchParams.get("frame");
   const linkedView = searchParams.get("view");
+  const gcpUploadError = searchParams.get("gcp_error");
   useEffect(() => {
     if (!linkedFrame || frames.length === 0) return;
     const i = frames.findIndex((f) => f.key === linkedFrame);
@@ -75,6 +78,14 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
   const showJob = !!job && (busy || job.status === "FAILED" || (survey?.status !== "COMPLETED" && job.status !== "COMPLETED"));
   const mutationError = [process, recompute, rebuildMosaic, detailed, remove].find((m) => m.isError)?.error as Error | undefined;
   const detailedJob = !!job && job.steps[0]?.key === "odm_prepare";
+
+  if (surveyMissing) {
+    return (
+      <AppShell>
+        <NotAvailable what="flight" />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -172,7 +183,9 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
             title={
               detailedJob
                 ? "Making the detailed map — usually a few hours; the quick map stays until then"
-                : job.steps.length > 2
+                : job.steps[0]?.key === "gcp_align"
+                  ? "Lining the map up with your surveyed points"
+                  : job.steps.length > 2
                   ? "Making your field map"
                   : job.steps.length === 2
                     ? "Rebuilding the field map"
@@ -191,6 +204,8 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
             }
           />
         )}
+
+        {survey && <GcpCard surveyId={id} busy={busy} initialError={gcpUploadError} />}
 
         {availability && isStaff && (
           <div className="rounded-xl border border-border bg-surface p-5">

@@ -158,6 +158,7 @@ class GroundControlPointOut(BaseModel):
     source: str
     score: float | None = None
     size_m: float | None = None
+    rtk: bool | None = None
 
 
 class SurveyAssetsAvailability(BaseModel):

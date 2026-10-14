@@ -15,6 +15,9 @@ const POINT_MAX_M = 5000;
 /** A tap this close to a target's point selects it: a fingertip cannot land on a 6 px dot. */
 const TAP_SLOP_PX = 22;
 const SELECTED = "#facc15";
+/** The farmer's surveyed points (GCP file): a blue ring, labelled below the
+ * point so it never hides the label of the target found there. */
+const SURVEYED = "#0ea5e9";
 
 export interface GcpLayerProps {
   viewer: any;
@@ -45,16 +48,21 @@ export function GcpLayer({ viewer, Cesium, ready, gcps, show, groundHeight = 0, 
       const id = entityId(g);
       const marker = isMarker(g);
       const selected = g.id === selectedId;
+      const surveyed = g.source === "surveyed";
       viewer.entities.removeById(id);
       viewer.entities.add({
         id,
         position: position(Cesium, g, groundHeight),
         point: {
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          pixelSize: (marker ? 6 : 9) + (selected ? 4 : 0),
-          color: selected ? Cesium.Color.fromCssColorString(SELECTED) : Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: marker ? 2 : 3,
+          pixelSize: surveyed ? 14 : (marker ? 6 : 9) + (selected ? 4 : 0),
+          color: selected
+            ? Cesium.Color.fromCssColorString(SELECTED)
+            : surveyed
+              ? Cesium.Color.fromCssColorString(SURVEYED).withAlpha(0.15)
+              : Cesium.Color.WHITE,
+          outlineColor: surveyed ? Cesium.Color.fromCssColorString(SURVEYED) : Cesium.Color.BLACK,
+          outlineWidth: surveyed ? 2.5 : marker ? 2 : 3,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, POINT_MAX_M),
         },
@@ -64,9 +72,13 @@ export function GcpLayer({ viewer, Cesium, ready, gcps, show, groundHeight = 0, 
           font: marker ? "600 11px sans-serif" : "600 12px sans-serif",
           fillColor: selected ? Cesium.Color.BLACK : Cesium.Color.WHITE,
           showBackground: true,
-          backgroundColor: selected ? Cesium.Color.fromCssColorString(SELECTED) : Cesium.Color.BLACK.withAlpha(0.65),
+          backgroundColor: selected
+            ? Cesium.Color.fromCssColorString(SELECTED)
+            : surveyed
+              ? Cesium.Color.fromCssColorString(SURVEYED).withAlpha(0.85)
+              : Cesium.Color.BLACK.withAlpha(0.65),
           backgroundPadding: new Cesium.Cartesian2(marker ? 4 : 6, marker ? 2 : 3),
-          pixelOffset: new Cesium.Cartesian2(0, marker ? -13 : -18),
+          pixelOffset: new Cesium.Cartesian2(0, surveyed ? 18 : marker ? -13 : -18),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
             0,
