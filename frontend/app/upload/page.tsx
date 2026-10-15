@@ -171,7 +171,7 @@ export default function UploadPage() {
           </div>
 
           {fieldId === "__new__" && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
               <div>
                 <label className="text-sm font-medium">Field name</label>
                 <Input

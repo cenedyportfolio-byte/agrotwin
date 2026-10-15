@@ -143,19 +143,19 @@ export const ERROR_COPY = {
   offline: {
     title: "Unable to reach AgroTwin",
     message:
-      "We couldn't reach AgroTwin. Check that the server is running on your computer and that this phone is on the same Wi-Fi network — you can change the server address in Settings.",
+      "We couldn't reach AgroTwin. Check that this phone has internet (Wi-Fi or mobile data) and try again. If it keeps happening, the AgroTwin server may be down for a while — or check the server address in Settings.",
   },
   timeout: {
     title: "AgroTwin is taking too long",
-    message: "The server did not answer in time. It may be busy processing a survey — try again in a moment.",
+    message: "The server did not answer in time. It may be busy making a map — try again in a moment.",
   },
   notConfigured: {
     title: "Server address not set",
-    message: "Open Settings and enter the address of your AgroTwin computer (for example http://192.168.1.50:8000).",
+    message: "Open Settings and enter the AgroTwin server address you were given (for example https://agrotwin.example.edu).",
   },
   notFound: {
     title: "Not found",
-    message: "This item no longer exists on the server. It may have been deleted from the web app.",
+    message: "This is no longer on AgroTwin, or your account cannot see it. It may have been deleted on the website.",
   },
   generic: {
     title: "Something went wrong",

@@ -16,8 +16,8 @@ interface UploadProgressCardProps {
 const TITLES: Record<UploadProgress["state"], string> = {
   IDLE: "Ready",
   SELECTING: "Choosing files",
-  UPLOADING: "Uploading to your AgroTwin computer",
-  PROCESSING: "Upload complete — processing started",
+  UPLOADING: "Uploading to AgroTwin",
+  PROCESSING: "Upload complete — making the map",
   COMPLETED: "Upload complete",
   FAILED: "Upload failed",
 };
@@ -51,7 +51,7 @@ export function UploadProgressCard({ progress, onCancel, onOpenSurvey, onRetry, 
       <View style={styles.actions}>
         {busy && onCancel ? <Button label="Cancel" variant="secondary" size="sm" onPress={onCancel} /> : null}
         {progress.state === "FAILED" && onRetry ? <Button label="Retry" size="sm" onPress={onRetry} /> : null}
-        {(progress.state === "COMPLETED" || progress.state === "PROCESSING") && onOpenSurvey ? <Button label="Open survey" size="sm" onPress={onOpenSurvey} /> : null}
+        {(progress.state === "COMPLETED" || progress.state === "PROCESSING") && onOpenSurvey ? <Button label="Open the flight" size="sm" onPress={onOpenSurvey} /> : null}
         {!busy && onReset ? <Button label="Upload more" variant="ghost" size="sm" onPress={onReset} /> : null}
       </View>
     </Blueprint>

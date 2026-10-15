@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Switch, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { FileUp, ImagePlus, Monitor } from "lucide-react-native";
+import { BookOpen, Crosshair, FileUp, ImagePlus, Monitor } from "lucide-react-native";
 import { mobileUploadSoftLimit } from "@/constants/config";
 import { iconStroke, layout } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useCreateField, useFields } from "@/features/fields/hooks";
 import { useCreateSurvey, useSurveys } from "@/features/surveys/hooks";
+import { useGcpFileCheck } from "@/features/gcp/hooks";
 import { pickAssetFile, pickDroneImages, pickImageFiles } from "@/features/upload/pickers";
 import { useUploadFlow } from "@/features/upload/useUploadFlow";
 import { IMPORTABLE_ASSET_TYPES, type ImportableAssetType } from "@/services/assets";
 import { describeError } from "@/services/errors";
+import { gcpService } from "@/services/gcp";
+import { useAuth } from "@/providers/AuthProvider";
 import type { LocalFile } from "@/services/surveys";
 import { formatDate, formatNumber, plural } from "@/utils/format";
 import { Blueprint, Button, Chip, ErrorState, LoadingState, Screen, ScreenHeader, SectionHeader, AppText } from "@/components/ui";
 import { NewFieldForm } from "@/components/upload/NewFieldForm";
 import { NewSurveyForm } from "@/components/upload/NewSurveyForm";
 import { UploadProgressCard } from "@/components/upload/UploadProgressCard";
+import { GcpFileFields } from "@/components/gcp/GcpFileFields";
 
 type Mode = "images" | "asset";
 
@@ -24,6 +28,8 @@ export default function UploadScreen() {
   const params = useLocalSearchParams<{ fieldId?: string; surveyId?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
+  // importing maps made elsewhere is a staff tool (the server refuses it for farmers)
+  const { isStaff } = useAuth();
 
   const fields = useFields();
   const surveys = useSurveys();
@@ -41,6 +47,11 @@ export default function UploadScreen() {
   const [startProcessing, setStartProcessing] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
+  const [showGcp, setShowGcp] = useState(false);
+  const [gcpFile, setGcpFile] = useState<LocalFile | null>(null);
+  const [gcpRtk, setGcpRtk] = useState(false);
+  const [gcpEpsg, setGcpEpsg] = useState("");
+  const gcp = useGcpFileCheck(gcpFile, gcpEpsg, (file, epsg) => gcpService.checkFile(file, { epsg, fieldId }));
 
   const { progress, uploadImages, uploadAsset, cancel, reset } = useUploadFlow(surveyId);
 
@@ -107,14 +118,14 @@ export default function UploadScreen() {
 
   const start = () => {
     if (!surveyId) return;
-    if (mode === "images") void uploadImages(files, startProcessing);
+    if (mode === "images") void uploadImages(files, startProcessing, gcpFile ? { file: gcpFile, rtk: gcpRtk, epsg: gcpEpsg } : null);
     else if (assetFile) void uploadAsset(assetType, assetFile);
   };
 
   if (fields.isPending || surveys.isPending) {
     return (
       <Screen safeTop padded={false}>
-        <ScreenHeader title="New survey" />
+        <ScreenHeader title="Upload a flight" />
         <View style={styles.body}>
           <LoadingState cards={2} />
         </View>
@@ -124,17 +135,19 @@ export default function UploadScreen() {
   if (fields.isError) {
     return (
       <Screen safeTop padded={false}>
-        <ScreenHeader title="New survey" />
+        <ScreenHeader title="Upload a flight" />
         <ErrorState error={fields.error} onRetry={() => fields.refetch()} />
       </Screen>
     );
   }
 
-  const canUpload = !!surveyId && !busy && (mode === "images" ? files.length > 0 : !!assetFile);
+  // a chosen GCP file must have been read without a problem first
+  const gcpReady = !gcpFile || (!!gcp.info && !gcp.error && !gcp.checking);
+  const canUpload = !!surveyId && !busy && (mode === "images" ? files.length > 0 && gcpReady : !!assetFile);
 
   return (
     <Screen safeTop padded={false} bottomInset={layout.bottomClearance}>
-      <ScreenHeader title="New survey" subtitle={`Step ${surveyId ? 4 : fieldId ? 2 : 1} of 4`} />
+      <ScreenHeader title="Upload a flight" subtitle={`Step ${progress.state !== "IDLE" ? 4 : surveyId ? 3 : fieldId ? 2 : 1} of 4`} />
       <View style={styles.body}>
         <Blueprint style={{ marginBottom: 20 }}>
           <View style={styles.row}>
@@ -147,6 +160,15 @@ export default function UploadScreen() {
             A full flight is often a thousand photos and many gigabytes. Upload those on the AgroTwin website from a computer, or from this
             phone's browser with Wi-Fi. The app is good for small batches and single photos.
           </AppText>
+          <Button
+            label="How to fly your field"
+            variant="ghost"
+            size="sm"
+            align="start"
+            icon={<BookOpen size={16} color={colors.accent} strokeWidth={iconStroke} />}
+            onPress={() => router.push("/flight-guide")}
+            style={{ marginTop: 6 }}
+          />
         </Blueprint>
 
         <View style={{ marginBottom: 20 }}>
@@ -182,12 +204,12 @@ export default function UploadScreen() {
 
         {fieldId ? (
           <View style={{ marginBottom: 20 }}>
-            <SectionHeader title="2 · Survey" actionLabel={newSurvey ? "Choose existing" : "New survey"} onAction={() => setNewSurvey((v) => !v)} />
+            <SectionHeader title="2 · Flight" actionLabel={newSurvey ? "Choose existing" : "New flight"} onAction={() => setNewSurvey((v) => !v)} />
             {newSurvey || openSurveys.length === 0 ? (
               <Blueprint>
                 {openSurveys.length === 0 && !newSurvey ? (
                   <AppText variant="caption" tone="muted" style={{ marginBottom: 12 }}>
-                    This field has no surveys yet — create the first one.
+                    No flights for this field yet — name this one.
                   </AppText>
                 ) : null}
                 <NewSurveyForm key={fieldId} fieldId={fieldId} onSubmit={onCreateSurvey} submitting={createSurvey.isPending} error={formError} />
@@ -204,15 +226,17 @@ export default function UploadScreen() {
 
         {surveyId ? (
           <View style={{ marginBottom: 20 }}>
-            <SectionHeader title="3 · What to upload" />
-            <View style={[styles.chips, { marginBottom: 12 }]}>
-              <Chip label="Drone images" selected={mode === "images"} onPress={() => setMode("images")} disabled={busy} />
-              <Chip label="Processed file" selected={mode === "asset"} onPress={() => setMode("asset")} disabled={busy} />
-            </View>
+            <SectionHeader title={isStaff ? "3 · What to upload" : "3 · Photos"} />
+            {isStaff ? (
+              <View style={[styles.chips, { marginBottom: 12 }]}>
+                <Chip label="Drone photos" selected={mode === "images"} onPress={() => setMode("images")} disabled={busy} />
+                <Chip label="Processed file" selected={mode === "asset"} onPress={() => setMode("asset")} disabled={busy} />
+              </View>
+            ) : null}
             {mode === "images" ? (
               <Blueprint>
                 <AppText variant="caption" tone="muted">
-                  JPG or TIFF drone frames with GPS. Files already on the server (same name and size) are skipped, so you can retry safely.
+                  The original JPG / TIF photos from the drone's memory card. Photos already received are skipped, so you can safely try again.
                 </AppText>
                 <View style={[styles.row, { marginTop: 12, flexWrap: "wrap" }]}>
                   <Button label="Choose photos" variant="secondary" icon={<ImagePlus size={16} color={colors.text} strokeWidth={iconStroke} />} onPress={() => choose(pickDroneImages)} disabled={busy} />
@@ -230,19 +254,57 @@ export default function UploadScreen() {
                     </AppText>
                     {files.length > mobileUploadSoftLimit ? (
                       <AppText variant="caption" tone="attention">
-                        ⚠ {formatNumber(files.length)} files is a lot for a phone upload. For large drone surveys, upload from the AgroTwin web application or desktop
-                        processing workflow.
+                        ⚠ {formatNumber(files.length)} files is a lot for a phone upload. For a whole flight, the AgroTwin website on a computer is faster.
                       </AppText>
                     ) : null}
                     <Button label="Clear selection" variant="ghost" align="start" size="sm" onPress={() => setFiles([])} disabled={busy} />
                   </View>
                 ) : null}
                 <View style={[styles.row, { marginTop: 12 }]}>
-                  <Switch value={startProcessing} onValueChange={setStartProcessing} disabled={busy} trackColor={{ true: colors.accent }} accessibilityLabel="Start processing after upload" />
+                  <Switch value={startProcessing} onValueChange={setStartProcessing} disabled={busy} trackColor={{ true: colors.accent }} accessibilityLabel="Make the map when the upload finishes" />
                   <AppText variant="body" style={{ flex: 1 }}>
-                    Start processing after upload
+                    Make the map when the upload finishes
                   </AppText>
                 </View>
+              </Blueprint>
+            ) : null}
+            {mode === "images" ? (
+              <Blueprint style={{ marginTop: 12 }}>
+                {showGcp || gcpFile ? (
+                  <View style={{ gap: 10 }}>
+                    <View style={styles.row}>
+                      <Crosshair size={18} color={colors.accent} strokeWidth={iconStroke} />
+                      <AppText variant="bodyStrong" style={{ flex: 1 }}>
+                        Ground control points (optional)
+                      </AppText>
+                    </View>
+                    <AppText variant="caption" tone="muted">
+                      If you measured the checkerboard targets with a GPS: the file from your GPS (latitude / longitude or easting / northing), or OpenDroneMap’s gcp_list.txt.
+                    </AppText>
+                    <GcpFileFields
+                      file={gcpFile}
+                      onFile={setGcpFile}
+                      rtk={gcpRtk}
+                      onRtk={setGcpRtk}
+                      epsg={gcpEpsg}
+                      onEpsg={setGcpEpsg}
+                      info={gcp.info}
+                      error={gcp.error}
+                      checking={gcp.checking}
+                      disabled={busy}
+                    />
+                  </View>
+                ) : (
+                  <Button
+                    label="Add ground control points (optional)"
+                    variant="ghost"
+                    size="sm"
+                    align="start"
+                    icon={<Crosshair size={16} color={colors.accent} strokeWidth={iconStroke} />}
+                    onPress={() => setShowGcp(true)}
+                    disabled={busy}
+                  />
+                )}
               </Blueprint>
             ) : (
               <Blueprint>
@@ -269,7 +331,14 @@ export default function UploadScreen() {
           <View>
             <SectionHeader title="4 · Upload" />
             {progress.state === "IDLE" ? (
-              <Button label={mode === "images" ? `Upload ${files.length ? plural(files.length, "image") : "images"}` : "Import file"} onPress={start} disabled={!canUpload} fullWidth size="lg" />
+              <>
+                <Button label={mode === "images" ? `Upload ${files.length ? plural(files.length, "photo") : "photos"}` : "Import file"} onPress={start} disabled={!canUpload} fullWidth size="lg" />
+                {mode === "images" && gcpFile && gcp.error ? (
+                  <AppText variant="caption" tone="problem" style={{ marginTop: 8 }}>
+                    Fix or remove the ground control points file first.
+                  </AppText>
+                ) : null}
+              </>
             ) : (
               <UploadProgressCard
                 progress={progress}
@@ -279,10 +348,17 @@ export default function UploadScreen() {
                   reset();
                   setFiles([]);
                   setAssetFile(null);
+                  setGcpFile(null);
+                  setShowGcp(false);
                 }}
                 onOpenSurvey={() => router.push({ pathname: "/survey/[id]", params: { id: surveyId } })}
               />
             )}
+            {progress.gcpError ? (
+              <AppText variant="bodySm" tone="problem" style={{ marginTop: 10 }}>
+                The ground control points file could not be used: {progress.gcpError} The photos were uploaded; you can add the points again on the flight screen.
+              </AppText>
+            ) : null}
           </View>
         ) : null}
       </View>

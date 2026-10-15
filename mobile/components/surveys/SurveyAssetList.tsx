@@ -35,15 +35,15 @@ export function SurveyAssetList({ availability, hasAnalysis, processing, imageCo
   const run = (ready: boolean): Mark => (ready ? "done" : processing ? "run" : "wait");
   const ifAvail = (ready: boolean): Mark => (ready ? "done" : "none");
   const items: Item[] = ([
-    { label: "Drone images", mark: ifAvail(imageCount > 0), note: imageCount > 0 ? formatNumber(imageCount) : "None uploaded" },
-    { label: "GPS metadata", mark: ifAvail(availability.gps_metadata), note: availability.gps_metadata ? "Complete" : "Missing" },
-    { label: "Orthomosaic", mark: run(availability.orthomosaic), note: availability.orthomosaic ? "Stitched" : processing ? "Building" : "Not built" },
-    { label: "Field analysis", mark: run(hasAnalysis), note: hasAnalysis ? "Complete" : processing ? "Running" : "Not run" },
-    { label: "Detection zones", mark: run(hasAnalysis), note: zoneCount != null ? `${zoneCount} found` : "" },
-    { label: "Digital twin", mark: availability.model_3d ? "done" : processing ? "run" : "wait", note: availability.model_3d ? "3D model" : "Terrain only" },
+    { label: "Drone photos", mark: ifAvail(imageCount > 0), note: imageCount > 0 ? formatNumber(imageCount) : "None uploaded" },
+    { label: "Photo positions (GPS)", mark: ifAvail(availability.gps_metadata), note: availability.gps_metadata ? "Complete" : "Missing" },
+    { label: "Field map", mark: run(availability.orthomosaic), note: availability.orthomosaic ? "Ready" : processing ? "Building" : "Not made" },
+    { label: "Crop health check", mark: run(hasAnalysis), note: hasAnalysis ? "Done" : processing ? "Running" : "Not run" },
+    { label: "Spots to check", mark: run(hasAnalysis), note: zoneCount != null ? `${zoneCount} found` : "" },
+    { label: "3D view", mark: availability.model_3d ? "done" : processing ? "run" : "wait", note: availability.model_3d ? "3D model" : "Terrain only" },
     { label: "Photorealistic view", mark: ifAvail(splat === "available"), note: splat === "available" ? "Ready" : splat === "missing" ? "Not built" : "Unknown" },
-    { label: "Thermal analysis", mark: ifAvail(availability.thermal), note: availability.thermal ? "Available" : "Not flown" },
-    { label: "Multispectral bands", mark: ifAvail(availability.multispectral), note: availability.multispectral ? "Available" : "RGB only", advancedOnly: true },
+    { label: "Heat (thermal) map", mark: ifAvail(availability.thermal), note: availability.thermal ? "Available" : "Not flown" },
+    { label: "Crop-health camera bands", mark: ifAvail(availability.multispectral), note: availability.multispectral ? "Available" : "Colour photos only", advancedOnly: true },
     { label: "Elevation (DSM)", mark: ifAvail(availability.dsm), note: availability.dsm ? "Available" : "Not built", advancedOnly: true },
     { label: "Point cloud", mark: ifAvail(availability.pointcloud), note: availability.pointcloud ? "Available" : "Not built", advancedOnly: true },
     { label: "PPK / RTK corrections", mark: ifAvail(availability.gnss_ppk), note: availability.gnss_ppk ? "Imported" : "None", advancedOnly: true },

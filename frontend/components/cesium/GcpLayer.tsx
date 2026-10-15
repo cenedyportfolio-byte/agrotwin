@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Cesium is loaded at runtime (lib/loadCesium.ts), as in the other layers */
 
 import { useEffect } from "react";
+import { formatTargetSize } from "@/lib/farm";
 import { isMarker, type GroundControlPoint } from "@/lib/types";
 
 /** Marker labels show only with the camera this close: the markers stand
@@ -86,7 +87,7 @@ export function GcpLayer({ viewer, Cesium, ready, gcps, show, groundHeight = 0, 
           ),
         },
         description:
-          `${g.name}${g.size_m != null ? ` — ${Math.round(g.size_m * 100)} cm target` : ""}` +
+          `${g.name}${g.size_m != null ? ` — ${formatTargetSize(g.size_m)} target` : ""}` +
           ` — ${g.lat.toFixed(7)}, ${g.lon.toFixed(7)}`,
       });
       ids.push(id);

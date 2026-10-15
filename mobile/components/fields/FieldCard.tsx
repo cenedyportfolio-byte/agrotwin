@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronRight, Sprout } from "lucide-react-native";
 import { iconStroke, layout } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import type { FieldSummary } from "@/types";
-import { cropLabel, formatHectares, formatPercent } from "@/utils/format";
+import { cropLabel, formatFieldArea, formatPercent } from "@/utils/format";
 import { overallHealth, sharesFromPercents } from "@/utils/health";
 import { surveyStatusLabel } from "@/constants/labels";
 import { Blueprint, HealthBar, IconBox, StatusBadge, Swatch, AppText } from "@/components/ui";
@@ -50,7 +50,7 @@ export function FieldCard({ field, onPress, zoneCount, lastSurveyLabel, variant 
         : `${zoneCount} ${zoneCount === 1 ? "area needs" : "areas need"} attention`;
   const flagged = zoneCount ? true : zoneCount == null && analysed && !!shares && shares.attention + shares.problem > 0;
   const zoneTone = flagged ? colors.attention : colors.muted;
-  const meta = `${cropLabel(field.crop_type)} · ${field.area_hectares != null ? formatHectares(field.area_hectares) : "size not measured"}`;
+  const meta = `${cropLabel(field.crop_type)} · ${field.area_hectares != null ? formatFieldArea(field.area_hectares) : "size not measured"}`;
 
   if (variant === "list") {
     return (

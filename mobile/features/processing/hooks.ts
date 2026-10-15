@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { jobPollIntervalMs } from "@/constants/config";
-import { isJobActive, processingService } from "@/services/processing";
+import { isJobActive, jobKind, processingService } from "@/services/processing";
+import type { ProcessingJob } from "@/types";
 import { queryKeys } from "../queryKeys";
 
 /**
@@ -29,6 +30,7 @@ export function useProcessingJob(surveyId: string | null | undefined) {
         queryKeys.surveyAvailability(surveyId),
         queryKeys.surveyBoundary(surveyId),
         queryKeys.analysis(surveyId),
+        queryKeys.gcpCheck(surveyId),
         queryKeys.fields,
         queryKeys.surveys,
       ]) {
@@ -65,4 +67,17 @@ export function useRebuildMosaic(surveyId: string) {
 
 export function useRecomputeAnalysis(surveyId: string) {
   return useJobMutation(surveyId, processingService.recomputeAnalysis);
+}
+
+export function useMakeDetailedMap(surveyId: string) {
+  return useJobMutation(surveyId, processingService.makeDetailedMap);
+}
+
+/** "Try again" for a failed job: the whole map, or the detailed map. A lining-up
+ * job is redone by adding the points again; rebuilds are staff tools. */
+export function useRetryJob(surveyId: string, job: ProcessingJob | null) {
+  const process = useTriggerProcessing(surveyId);
+  const detailed = useMakeDetailedMap(surveyId);
+  const kind = job ? jobKind(job) : null;
+  return kind === "full" ? process : kind === "detailed" ? detailed : null;
 }

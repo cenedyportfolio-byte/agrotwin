@@ -1,7 +1,7 @@
 import { View } from "react-native";
 import { BAND_LABEL } from "@/constants/labels";
 import type { SurveyImage } from "@/types";
-import { formatDateTime, formatMeters, formatPercent } from "@/utils/format";
+import { formatDateTime, formatFeet, formatPercent } from "@/utils/format";
 import { Disclosure, KeyValueRow, AppText } from "@/components/ui";
 
 interface ImageMetadataProps {
@@ -27,7 +27,7 @@ export function ImageMetadata({ image, drone, advanced = false }: ImageMetadataP
       </AppText>
       <KeyValueRow label="GPS latitude" value={coord(image.lat, "N", "S")} />
       <KeyValueRow label="GPS longitude" value={coord(image.lon, "E", "W")} />
-      <KeyValueRow label="Altitude" value={image.rel_altitude_m != null ? `${formatMeters(image.rel_altitude_m, 0)} above takeoff` : formatMeters(image.altitude_m, 0)} />
+      <KeyValueRow label="Altitude" value={image.rel_altitude_m != null ? `${formatFeet(image.rel_altitude_m)} above takeoff` : formatFeet(image.altitude_m)} />
       <KeyValueRow label="Camera" value={drone ?? "Unknown"} />
       <KeyValueRow label="Captured" value={formatDateTime(image.captured_at)} />
       <KeyValueRow label="Band" value={BAND_LABEL[image.band] ?? image.band} />

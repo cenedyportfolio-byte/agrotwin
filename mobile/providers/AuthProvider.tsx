@@ -16,6 +16,9 @@ interface AuthContextValue {
   user: User | null;
   /** First name for greetings. */
   userName: string | null;
+  /** Admin or operator: rebuilding maps, re-checking crop health and importing
+   * processed files are staff tools (the server refuses them for farmers). */
+  isStaff: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -73,6 +76,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isAuthenticated: !!token,
       user,
       userName: user?.name?.split(" ")[0] ?? null,
+      isStaff: user?.role === "admin" || user?.role === "operator",
       signIn,
       signOut,
     }),

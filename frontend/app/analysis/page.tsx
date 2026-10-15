@@ -28,7 +28,7 @@ function RowMetricsCard({ rows }: { rows: RowMetrics }) {
         <span className="font-medium">Crop rows &amp; canopy</span>
         <span className="text-muted-foreground">measured on the orthomosaic · {rows.method}</span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3">
         <Metric label="Row spacing" value={rows.row_spacing_m != null ? `${rows.row_spacing_m} m` : "—"} />
         <Metric label="Row bearing" value={rows.row_orientation_deg != null ? `${rows.row_orientation_deg}°` : "—"} />
         <Metric label="Vegetation cover" value={rows.vegetation_cover_percent != null ? `${rows.vegetation_cover_percent}%` : "—"} />

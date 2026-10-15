@@ -42,8 +42,8 @@ export default function SurveysScreen() {
   const header = (
     <View style={styles.header}>
       <View style={styles.titleRow}>
-        <AppText variant="display">Surveys</AppText>
-        <Button label="New survey" onPress={() => router.push("/upload")} />
+        <AppText variant="display">Flights</AppText>
+        <Button label="Upload a flight" onPress={() => router.push("/upload")} />
       </View>
       <SegmentedBar options={FILTERS} value={filter} onChange={setFilter} />
     </View>
@@ -56,9 +56,9 @@ export default function SurveysScreen() {
     body = (
       <EmptyState
         icon={<Camera size={52} color={colors.accent} strokeWidth={1.2} />}
-        title="No surveys yet"
-        message="Upload a drone flight to create your first survey. Large flights are best uploaded from the AgroTwin web app."
-        actionLabel="New survey"
+        title="No flights yet"
+        message="Upload the photos of a drone flight to see your field. Large flights are best uploaded on the AgroTwin website."
+        actionLabel="Upload a flight"
         onAction={() => router.push("/upload")}
       />
     );

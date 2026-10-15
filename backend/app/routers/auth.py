@@ -8,11 +8,12 @@ from app.database import get_db
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-def _set_cookie(response: Response, token: str) -> None:
+def _set_cookie(response: Response, token: str, persistent: bool = True) -> None:
+    """`persistent`: kept for session_days; otherwise the browser drops it when it closes."""
     response.set_cookie(
         settings.session_cookie,
         token,
-        max_age=settings.session_days * 24 * 3600,
+        max_age=settings.session_days * 24 * 3600 if persistent else None,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
@@ -32,7 +33,7 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
     auth.clear_failures(email)
     token = auth.create_session(db, user)
     db.commit()
-    _set_cookie(response, token)
+    _set_cookie(response, token, persistent=payload.remember)
     return {"user": user, "token": token}
 
 

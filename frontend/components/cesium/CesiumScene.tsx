@@ -3,7 +3,7 @@
 import type * as GeoJSON from "geojson";
 import { useEffect, useRef, useState } from "react";
 import type { SurveyImage } from "@/lib/types";
-import type { ViewMode } from "@/lib/digitalTwinStore";
+import { useDigitalTwinStore, type ViewMode } from "@/lib/digitalTwinStore";
 import { healthColor } from "@/lib/colors";
 
 export interface CesiumSceneProps {
@@ -58,6 +58,24 @@ function steadyZoom(startHeight: number, endHeight: number) {
   const r = Math.max(endHeight, 1) / Math.max(startHeight, 1);
   return (t: number) => (1 - Math.pow(r, t * t * (3 - 2 * t))) / (1 - r);
 }
+
+/** Where each mode looks at the field from: lon/lat offset, height above the ground, pitch. */
+function homeView(mode: ViewMode, lon: number, lat: number, ground: number) {
+  if (mode === "3d-twin") {
+    // ~300 m south of the centre at 350 m, looking down 50°: the whole
+    // field fills the view with some perspective on the terrain mesh
+    return { lon, lat: lat - 0.0027, height: ground + 350, pitch: -50 };
+  }
+  if (mode === "photorealistic") {
+    // steep view from the south edge: nadir-only captures reconstruct the
+    // ground well but look "needly" at grazing angles
+    return { lon, lat: lat - 0.0009, height: ground + 330, pitch: -70 };
+  }
+  return { lon, lat, height: ground + 350, pitch: -90 };
+}
+
+/** Height above the ground when looking down at one point (a photo's position). */
+const POINT_VIEW_M = 120;
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -199,19 +217,32 @@ export function CesiumScene({
         cancel: ended,
       });
     };
-    if (mode === "3d-twin") {
-      // ~300 m south of the centre at 350 m, looking down 50°: the whole
-      // field fills the view with some perspective on the terrain mesh
-      fly(centerLon, centerLat - 0.0027, base + 350, -50);
-    } else if (mode === "photorealistic") {
-      // steep view from the south edge: nadir-only captures reconstruct the
-      // ground well but look "needly" at grazing angles
-      fly(centerLon, centerLat - 0.0009, base + 330, -70);
-    } else if (mode === "field-map") {
-      fly(centerLon, centerLat, base + 350, -90);
-    }
+    const home = homeView(mode, centerLon, centerLat, base);
+    fly(home.lon, home.lat, home.height, home.pitch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewer, Cesium, mode, cameraReady, ready, centerLat, centerLon, initialCamera, groundHeight, intro]);
+
+  // One-off moves asked for by the mobile app: back to this mode's view of the
+  // field ("Centre"), or straight down at a point (where a photo was taken).
+  // Held until the opening flight has landed on the exact ground height, so
+  // that flight does not undo it.
+  const cameraRequest = useDigitalTwinStore((s) => s.cameraRequest);
+  const handledRequest = useRef(0);
+  useEffect(() => {
+    if (!cameraRequest || cameraRequest.seq === handledRequest.current) return;
+    if (!viewer || !Cesium || viewer.isDestroyed() || !ready || intro !== "done" || centerLat == null || centerLon == null) return;
+    handledRequest.current = cameraRequest.seq;
+    const to =
+      cameraRequest.kind === "point"
+        ? { lon: cameraRequest.lon, lat: cameraRequest.lat, height: groundHeight + POINT_VIEW_M, pitch: -90 }
+        : homeView(mode, centerLon, centerLat, groundHeight);
+    flight.current++;
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(to.lon, to.lat, to.height),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(to.pitch), roll: 0 },
+      duration: MODE_SWITCH_S,
+    });
+  }, [viewer, Cesium, cameraRequest, ready, intro, mode, centerLat, centerLon, groundHeight]);
 
   useEffect(() => {
     if (!viewer || !Cesium || !ready || viewer.isDestroyed()) return;

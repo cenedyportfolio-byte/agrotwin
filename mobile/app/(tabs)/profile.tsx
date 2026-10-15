@@ -10,6 +10,7 @@ import { useFields } from "@/features/fields/hooks";
 import { useTestConnection } from "@/features/settings/hooks";
 import { useShallow } from "zustand/react/shallow";
 import { effectiveUrls, useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
+import { formatFieldArea } from "@/utils/format";
 import { Blueprint, CheckRow, IconBox, ListGroup, ListRow, Screen, SectionHeader, StatusBadge, AppText } from "@/components/ui";
 import { AskAiFab } from "@/components/ai/AskAiFab";
 
@@ -66,7 +67,7 @@ export default function ProfileScreen() {
           <AppText variant="caption" tone="muted">
             {fields.isPending
               ? "Loading fields…"
-              : `${user?.email ?? "AgroTwin"} · ${(farm.ha * 2.47105).toFixed(1)} acres · ${farm.count} ${farm.count === 1 ? "field" : "fields"}`}
+              : `${user?.email ?? "AgroTwin"} · ${formatFieldArea(farm.ha)} · ${farm.count} ${farm.count === 1 ? "field" : "fields"}`}
           </AppText>
         </View>
       </Blueprint>
@@ -95,7 +96,7 @@ export default function ProfileScreen() {
           <ListRow icon={<Building2 size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Fields" note={`${farm.count} ${farm.count === 1 ? "field" : "fields"}`} onPress={() => router.push("/(tabs)/fields")} />
           <ListRow icon={<Upload size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Upload a flight" note="Photos from the drone's memory card" onPress={() => router.push("/upload")} />
           <ListRow icon={<Layers size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Detail level" note={advanced ? "Advanced — methods and technical names shown" : "Simple — farmer wording"} onPress={() => router.push("/settings")} />
-          <ListRow icon={<CircleHelp size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Help & support" note="Setup and troubleshooting in mobile/README.md" onPress={() => router.push("/settings")} />
+          <ListRow icon={<CircleHelp size={20} color={colors.accent} strokeWidth={iconStroke} />} label="How to fly your field" note="Drone settings and uploading the photos" onPress={() => router.push("/flight-guide")} />
           <ListRow icon={<Cog size={20} color={colors.accent} strokeWidth={iconStroke} />} label="About" note={`AgroTwin Mobile ${Constants.expoConfig?.version ?? ""}`} />
           <ListRow
             icon={<LogOut size={20} color={colors.accent} strokeWidth={iconStroke} />}

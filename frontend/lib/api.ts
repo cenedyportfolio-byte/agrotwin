@@ -75,8 +75,9 @@ export function isJobActive(job: ProcessingJob | null | undefined): boolean {
 
 export const api = {
   // --- sign-in and accounts ---
-  login: (email: string, password: string) =>
-    postJson<{ user: User; token: string }>("/api/auth/login", { email, password }),
+  /** `remember` false: the session cookie ends when the browser closes (a shared computer). */
+  login: (email: string, password: string, remember = true) =>
+    postJson<{ user: User; token: string }>("/api/auth/login", { email, password, remember }),
   logout: () => postJson<{ signed_out: boolean }>("/api/auth/logout", {}),
   me: () => request<User>("/api/auth/me"),
   changePassword: (currentPassword: string, newPassword: string) =>

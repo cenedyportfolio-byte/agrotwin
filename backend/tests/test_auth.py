@@ -116,6 +116,24 @@ def test_sign_in_and_sessions(db, alice):
     db.commit()
 
 
+def test_remember_device(db, alice):
+    """"Keep this device signed in": a lasting cookie by default, a browser-session
+    cookie (no Max-Age) when it is switched off."""
+    from fastapi import Response
+
+    from app.routers import auth as auth_router
+
+    for remember, lasting in ((True, True), (False, False)):
+        response = Response()
+        auth_router.login(schemas.LoginRequest(email="alice@farm.com", password="secret-pass", remember=remember), response, db)
+        cookie = response.headers["set-cookie"]
+        assert cookie.startswith(f"{settings.session_cookie}=") and "HttpOnly" in cookie, cookie
+        assert ("Max-Age" in cookie) is lasting, cookie
+    response = Response()
+    auth_router.login(schemas.LoginRequest(email="alice@farm.com", password="secret-pass"), response, db)
+    assert "Max-Age" in response.headers["set-cookie"]  # the phone app and older web pages send no flag
+
+
 def test_handoff(db, alice):
     """The mobile app hands its session to the web viewer with a one-time code."""
     code = auth.create_handoff(alice)
@@ -216,6 +234,7 @@ def main():
     try:
         test_passwords()
         test_sign_in_and_sessions(db, alice)
+        test_remember_device(db, alice)
         test_repeated_wrong_passwords()
         test_handoff(db, alice)
         test_farmer_sees_only_own(db, admin, operator, alice, bob, fields)

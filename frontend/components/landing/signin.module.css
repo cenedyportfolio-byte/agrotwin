@@ -1,0 +1,280 @@
+/* The sign-in page (/login), from the Claude Design handoff "AgroTwin Sign In":
+   the form beside a full-height NDVI picture of a surveyed field. Tokens, frames,
+   buttons and the theme switch come from landing.module.css. */
+
+.page {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+}
+
+/* ── the form side ── */
+.formSide {
+  display: flex;
+  flex-direction: column;
+  padding: 24px 28px 32px;
+  min-height: 100dvh;
+}
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 0;
+}
+.column {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.title {
+  font-size: 52px;
+  line-height: 0.98;
+}
+.subtitle {
+  font-size: 16px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fieldLabel {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+}
+.linkBtn {
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+.linkBtn:hover {
+  color: var(--color-accent-400);
+}
+.input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  font: inherit;
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
+  outline: none;
+}
+.input::placeholder {
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.input:focus {
+  border-color: var(--color-accent);
+}
+.input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+.pwBox {
+  display: flex;
+  border: 1px solid var(--color-divider);
+}
+/* the field's own outline is off (as in the design), so the frame shows focus */
+.pwBox:focus-within {
+  border-color: var(--color-accent);
+}
+.pwBox[data-invalid="true"] {
+  border-color: var(--bad);
+}
+.pwInput {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 14px;
+  font: inherit;
+  background: transparent;
+  color: var(--color-text);
+  border: 0;
+  outline: none;
+}
+.eyeBtn {
+  width: 48px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--color-divider);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.eyeBtn:hover {
+  color: var(--color-accent);
+}
+.error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bad);
+}
+.hint {
+  font-size: 13px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.remember {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  text-align: left;
+}
+.box {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--color-divider);
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: var(--color-bg);
+}
+.remember[aria-pressed="true"] .box {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+.submit {
+  min-height: 52px;
+  gap: 10px;
+  color: var(--color-accent);
+}
+.submit:hover:not(:disabled) {
+  color: var(--color-accent-400);
+}
+.submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+
+/* ── the picture side ── */
+.picture {
+  position: relative;
+  min-height: 420px;
+  border-left: 1px solid var(--color-divider);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.crosshair {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(#c6f432, #c6f432) 50% 50% / 1px 40px no-repeat,
+    linear-gradient(#c6f432, #c6f432) 50% 50% / 40px 1px no-repeat;
+}
+.lastSurvey {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: color-mix(in srgb, var(--color-bg) 90%, transparent);
+  border: 1px solid var(--color-divider);
+  padding: 9px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.caption {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 20px;
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  border: 1px solid var(--color-divider);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.captionTitle {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.1;
+}
+.shares {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* one column (below 960 px): the picture follows the form, ruled on top */
+@media (max-width: 959px) {
+  .picture {
+    border-left: 0;
+    border-top: 1px solid var(--color-divider);
+  }
+}
+@media (max-width: 600px) {
+  .formSide {
+    padding: 16px 20px 24px;
+  }
+  .title {
+    font-size: 44px;
+  }
+}

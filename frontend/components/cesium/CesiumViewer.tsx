@@ -65,6 +65,12 @@ async function sampleGroundHeight(Cesium: any, terrainProvider: any, lon: number
   return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
 }
 
+/** Objects looked through under a click to find a zone (its outline and fill, the field outline, photo points). */
+const ZONE_PICK_DEPTH = 6;
+
+/** What scene.drillPick returns for an entity; zones carry their id as a property. */
+type PickedObject = { id?: { properties?: { detectionId?: { getValue?: () => string } } } } | undefined;
+
 export interface CesiumViewerProps {
   boundary: GeoJSON.Geometry | null;
   centerLat: number | null;
@@ -319,7 +325,14 @@ export default function CesiumViewer({
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((click: any) => {
       const gcpId = showGcps && onSelectGcp ? gcpAt(viewer, Cesium, gcps, groundH, click.position) : null;
-      const zoneId = gcpId ? null : viewer.scene.pick(click.position)?.id?.properties?.detectionId?.getValue?.();
+      // the field outline's fill lies over every zone: look through it (the
+      // topmost pick alone was the outline, so zones inside the field never opened)
+      const zoneId = gcpId
+        ? null
+        : viewer.scene
+            .drillPick(click.position, ZONE_PICK_DEPTH)
+            .map((p: PickedObject) => p?.id?.properties?.detectionId?.getValue?.())
+            .find(Boolean);
       onSelectGcp?.(gcpId);
       onSelectDetection?.(zoneId ?? null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);

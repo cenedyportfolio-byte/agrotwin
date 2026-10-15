@@ -167,3 +167,11 @@ export function formatDistance(m: number | null | undefined): string {
   const ft = m * 3.28084;
   return ft < 1 ? `${(ft * 12).toFixed(1)} in` : `${ft.toFixed(1)} ft`;
 }
+
+/** A checkerboard target's size from its side length: "60 × 60 cm · 0.36 m²"
+ * (small markers in cm²: "17 × 17 cm · 289 cm²"). */
+export function formatTargetSize(sideM: number): string {
+  const side = Math.round(sideM * 100);
+  const area = sideM * sideM;
+  return `${side} × ${side} cm · ${area < 0.1 ? `${Math.round(area * 10_000)} cm²` : `${area.toFixed(2)} m²`}`;
+}

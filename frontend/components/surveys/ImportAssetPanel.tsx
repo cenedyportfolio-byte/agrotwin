@@ -110,7 +110,7 @@ export function ImportAssetPanel({ surveyId, disabled }: { surveyId: string; dis
         placement is read from the file itself and shown in the Digital Twin at its real location.
       </p>
 
-      <div className="flex flex-col sm:flex-row gap-2">
+      <div className="flex flex-col @xl:flex-row gap-2">
         <select
           value={assetType}
           onChange={(e) => {

@@ -48,7 +48,8 @@ export default function DashboardPage() {
           <p className="text-muted-foreground mt-1 text-xs sm:text-sm">Here&apos;s how your fields are doing.</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        {/* columns by the room the page has (<main> is a container): on a tablet the sidebar takes part of the screen */}
+        <div className="grid grid-cols-2 @3xl:grid-cols-4 gap-3 sm:gap-4">
           <SummaryCard icon={Sprout} label="Fields" value={fields ? String(fields.length) : "—"} />
           <SummaryCard icon={MapPin} label="Total area" value={fields ? formatAcres(totalAcres) : "—"} />
           <SummaryCard
@@ -91,14 +92,14 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 @2xl:grid-cols-2 @6xl:grid-cols-3 gap-4">
             {fields?.map((field) => (
               <FieldCard key={field.id} field={field} />
             ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 @5xl:grid-cols-2 gap-6">
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold">Spots to check</h2>
@@ -165,13 +166,17 @@ function SummaryCard({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-3 sm:p-4 flex items-center gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
-        <Icon size={18} />
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="truncate text-base sm:text-lg font-semibold leading-tight">{value}</div>
+    // a narrow box (two to a row on a small phone) puts the icon above the text,
+    // and a long value wraps rather than being cut off ("3.2 ac…")
+    <div className="@container rounded-xl border border-border bg-surface p-3 sm:p-4">
+      <div className="flex flex-col items-start gap-2 @[10.5rem]:flex-row @[10.5rem]:items-center @[10.5rem]:gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+          <Icon size={18} />
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground">{label}</div>
+          <div className="break-words text-base sm:text-lg font-semibold leading-tight">{value}</div>
+        </div>
       </div>
     </div>
   );

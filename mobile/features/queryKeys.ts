@@ -12,4 +12,5 @@ export const queryKeys = {
   surveyBoundary: (surveyId: string) => ["survey-boundary", surveyId] as const,
   analysis: (surveyId: string) => ["analysis", surveyId] as const,
   job: (surveyId: string) => ["job", surveyId] as const,
+  gcpCheck: (surveyId: string) => ["gcp-check", surveyId] as const,
 };

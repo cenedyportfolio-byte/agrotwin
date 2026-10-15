@@ -17,6 +17,9 @@ class UserOut(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+    # the web sign-in's "Keep this device signed in": off (a shared computer),
+    # the cookie ends with the browser session instead of lasting session_days
+    remember: bool = True
 
 
 class LoginResponse(BaseModel):

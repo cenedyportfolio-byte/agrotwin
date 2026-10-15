@@ -18,7 +18,7 @@ const ITEMS: { key: keyof SurveyAvailability; label: string }[] = [
 
 export function AvailabilityChecklist({ availability }: { availability: SurveyAvailability }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 @3xl:grid-cols-3 gap-2">
       {ITEMS.map(({ key, label }) => {
         const available = availability[key];
         return (

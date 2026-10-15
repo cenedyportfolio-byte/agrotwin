@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useTheme } from "@/hooks/useTheme";
 import type { SurveyImage } from "@/types";
-import { formatCoordinate, formatMeters } from "@/utils/format";
+import { formatCoordinate, formatFeet } from "@/utils/format";
 import { AppText } from "@/components/ui";
 import { authHeaders } from "@/services/apiClient";
 
@@ -20,7 +20,7 @@ interface ImageTileProps {
 /** Canvas gallery tile: hairline frame, square corners, filename + "lat · lon · altitude" meta. Memoised for long lists. */
 export const ImageTile = memo(function ImageTile({ image, index, thumbnailUrl, onPress, layout, width }: ImageTileProps) {
   const { colors } = useTheme();
-  const meta = image.lat != null && image.lon != null ? `${formatCoordinate(image.lat, image.lon)} · ${formatMeters(image.rel_altitude_m ?? image.altitude_m, 0)}` : "No GPS";
+  const meta = image.lat != null && image.lon != null ? `${formatCoordinate(image.lat, image.lon)} · ${formatFeet(image.rel_altitude_m ?? image.altitude_m)}` : "No GPS";
   const grid = layout === "grid";
   return (
     <Pressable

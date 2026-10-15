@@ -13,10 +13,10 @@ import {
   buildViewerUrl,
   hostMessageScript,
   injectedBeforeLoad,
-  injectedHideWebChromeScript,
   parseViewerMessage,
   type HostToViewerMessage,
   type SplatStatus,
+  type ViewerGcp,
   type TwinMode,
   type ViewerToHostMessage,
 } from "./digitalTwinBridge";
@@ -36,6 +36,8 @@ interface DigitalTwinWebViewProps {
   onModeChanged?: (mode: TwinMode) => void;
   onSplatStatus?: (status: SplatStatus, detail?: string) => void;
   onLayerError?: (message: string) => void;
+  /** A ground control target was tapped (null: deselected). */
+  onGcpSelected?: (gcp: ViewerGcp | null) => void;
   /** Colour of the safe-area strips above and below the page (defaults to the immersive dark ground). */
   frameColor?: string;
 }
@@ -48,7 +50,7 @@ const READY_FALLBACK_MS = 25_000;
  * The only component in the app that knows about react-native-webview.
  */
 export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebViewProps>(function DigitalTwinWebView(
-  { fieldId, surveyId, mode, focusZoneId, onReady, onZoneSelected, onModeChanged, onSplatStatus, onLayerError, frameColor = immersive.bg },
+  { fieldId, surveyId, mode, focusZoneId, onReady, onZoneSelected, onModeChanged, onSplatStatus, onLayerError, onGcpSelected, frameColor = immersive.bg },
   ref
 ) {
   const { colors } = useTheme();
@@ -130,11 +132,14 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
         case "LAYER_ERROR":
           onLayerError?.(message.message);
           break;
+        case "GCP_SELECTED":
+          onGcpSelected?.(message.gcp);
+          break;
         case "PONG":
           break;
       }
     },
-    [onReady, onZoneSelected, onModeChanged, onSplatStatus, onLayerError]
+    [onReady, onZoneSelected, onModeChanged, onSplatStatus, onLayerError, onGcpSelected]
   );
 
   if (!url) {
@@ -175,7 +180,6 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
         onMessage={handleMessage}
         onLoadEnd={() => {
-          webRef.current?.injectJavaScript(injectedHideWebChromeScript);
           // Bridge-less page (older web build): hide the spinner once the document loaded.
           setTimeout(() => setLoading(false), 1500);
         }}
@@ -201,7 +205,7 @@ export const DigitalTwinWebView = forwardRef<DigitalTwinHandle, DigitalTwinWebVi
             3D viewer loading
           </AppText>
           <AppText variant="small" style={[styles.hint, { color: immersive.textFaint }]}>
-            Cesium scene renders here — streamed from your AgroTwin computer.
+            Cesium scene renders here — streamed from the AgroTwin server.
           </AppText>
         </View>
       ) : null}

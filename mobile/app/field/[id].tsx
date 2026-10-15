@@ -13,7 +13,7 @@ import { useProcessingJob } from "@/features/processing/hooks";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { assetsService } from "@/services/assets";
-import { cropLabel, formatDate, formatHectares, formatNumber, relativeDay } from "@/utils/format";
+import { cropLabel, formatDate, formatFieldArea, formatNumber, relativeDay } from "@/utils/format";
 import { sharesFromPercents } from "@/utils/health";
 import { Blueprint, Button, ErrorState, KeyValueRow, ListGroup, ListRow, LoadingState, Screen, ScreenHeader, SectionHeader, AppText } from "@/components/ui";
 import { FieldHealthSummary } from "@/components/fields/FieldHealthSummary";
@@ -65,9 +65,9 @@ export default function FieldDetailScreen() {
 
   const f = field.data;
   const shares = sharesFromPercents(f.healthy_area_percent, f.attention_area_percent, f.problem_area_percent);
-  const meta = `${cropLabel(f.crop_type)} · ${f.area_hectares != null ? formatHectares(f.area_hectares) : "size not measured"}`;
+  const meta = `${cropLabel(f.crop_type)} · ${f.area_hectares != null ? formatFieldArea(f.area_hectares) : "size not measured"}`;
   const go = (pathname: "/map/[surveyId]" | "/analysis/[surveyId]" | "/twin/[surveyId]" | "/gallery/[surveyId]") => latest && router.push({ pathname, params: { surveyId: latest.id } });
-  const procLabel = latest ? (analysis.data ? "Analysis complete" : processing ? "Processing" : latest.status === "FAILED" ? "Failed" : "Not analysed") : "—";
+  const procLabel = latest ? (analysis.data ? "Crop health checked" : processing ? "Making the map" : latest.status === "FAILED" ? "Failed" : "No results yet") : "—";
   const procColor = analysis.data ? colors.healthy : processing ? colors.accent : latest?.status === "FAILED" ? colors.problem : colors.muted;
 
   return (
@@ -80,7 +80,7 @@ export default function FieldDetailScreen() {
           ) : (
             <View style={[styles.fill, styles.center]}>
               <AppText variant="tagUpper" tone="faint" style={{ letterSpacing: 1.5 }}>
-                {latest ? (processing ? "Field map is being built" : "No field map yet") : "No survey yet"}
+                {latest ? (processing ? "Field map is being built" : "No field map yet") : "No flight yet"}
               </AppText>
             </View>
           )}
@@ -97,36 +97,36 @@ export default function FieldDetailScreen() {
           </View>
         ) : null}
 
-        <SectionHeader title="Latest survey" />
+        <SectionHeader title="Latest flight" />
         <Blueprint style={{ marginBottom: 18 }}>
           {surveys.isPending ? (
-            <LoadingState message="Loading surveys…" />
+            <LoadingState message="Loading flights…" />
           ) : latest ? (
             <>
               <KeyValueRow label="Date" value={formatDate(latest.survey_date ?? latest.created_at)} />
-              <KeyValueRow label="Drone images" value={formatNumber(latest.frame_count || latest.image_count)} />
+              <KeyValueRow label="Photos" value={formatNumber(latest.frame_count || latest.image_count)} />
               <KeyValueRow label="Status" value={procLabel} valueColor={procColor} last />
             </>
           ) : (
             <AppText variant="bodySm" tone="muted">
-              No surveys of this field yet.
+              No flights of this field yet.
             </AppText>
           )}
         </Blueprint>
 
         <View style={styles.actions}>
           <Button label="View field map" size="lg" onPress={() => go("/map/[surveyId]")} disabled={!latest} fullWidth />
-          <Button label="View analysis" variant="secondary" size="lg" onPress={() => go("/analysis/[surveyId]")} disabled={!latest || !analysis.data} fullWidth />
+          <Button label="View crop health" variant="secondary" size="lg" onPress={() => go("/analysis/[surveyId]")} disabled={!latest || !analysis.data} fullWidth />
         </View>
 
         <SectionHeader title="More for this field" />
         <ListGroup>
-          <ListRow icon={<Cuboid size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Digital twin" note="3D model of this field" onPress={latest ? () => go("/twin/[surveyId]") : undefined} disabled={!latest} />
+          <ListRow icon={<Cuboid size={20} color={colors.accent} strokeWidth={iconStroke} />} label="3D view" note="The field in 3D" onPress={latest ? () => go("/twin/[surveyId]") : undefined} disabled={!latest} />
           <ListRow icon={<Bot size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Ask AgroTwin AI" note="Questions about this field" onPress={() => router.push(latest ? { pathname: "/ai/chat", params: { surveyId: latest.id } } : "/ai/chat")} />
           <ListRow
             icon={<Camera size={20} color={colors.accent} strokeWidth={iconStroke} />}
-            label="Survey images"
-            note={latest ? `${formatNumber(latest.frame_count || latest.image_count)} drone photos` : "No survey yet"}
+            label="Flight photos"
+            note={latest ? `${formatNumber(latest.frame_count || latest.image_count)} drone photos` : "No flight yet"}
             onPress={latest ? () => go("/gallery/[surveyId]") : undefined}
             disabled={!latest}
             last={(surveys.data?.length ?? 0) <= 1}
@@ -134,8 +134,8 @@ export default function FieldDetailScreen() {
           {(surveys.data?.length ?? 0) > 1 ? (
             <ListRow
               icon={<Camera size={20} color={colors.accent} strokeWidth={iconStroke} />}
-              label="Survey history"
-              note={`${surveys.data?.length} surveys · latest ${relativeDay(latest?.survey_date ?? latest?.created_at)}`}
+              label="All flights"
+              note={`${surveys.data?.length} flights · latest ${relativeDay(latest?.survey_date ?? latest?.created_at)}`}
               onPress={() => router.push("/(tabs)/surveys")}
               last
             />

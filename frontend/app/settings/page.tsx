@@ -104,7 +104,7 @@ export default function SettingsPage() {
                   )}
                   <p className="text-xs text-muted-foreground">
                     To add one, place a folder with <code className="font-mono">manifest.json</code> and the weights under{" "}
-                    <code className="font-mono">{detectors.models_dir}</code>. It then runs on the orthomosaic during analysis and its detections are labelled with the model name.
+                    <code className="font-mono break-all">{detectors.models_dir}</code>. It then runs on the orthomosaic during analysis and its detections are labelled with the model name.
                   </p>
             </>
           )}
@@ -176,7 +176,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   return (
     <div className="flex justify-between gap-4">
       <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+      <span className={`min-w-0 text-right break-words ${mono ? "font-mono text-xs break-all" : ""}`}>{value}</span>
     </div>
   );
 }

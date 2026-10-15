@@ -68,7 +68,7 @@ export function describeError(err: unknown): ErrorDescription {
         if (err.status === 404) return { ...ERROR_COPY.notFound, retryable: false, technical };
         if (err.status === 409)
           return {
-            title: "Survey is busy",
+            title: "This flight is busy",
             message: err.detail ?? "This survey is being processed — wait for the current job to finish.",
             retryable: true,
             technical,
@@ -83,7 +83,7 @@ export function describeError(err: unknown): ErrorDescription {
         if (err.status && err.status >= 500)
           return {
             title: "AgroTwin ran into a problem",
-            message: err.detail ?? "The server reported an internal error. Check the backend logs on your computer.",
+            message: err.detail ?? "Something went wrong on the AgroTwin server. Try again in a moment; if it keeps happening, tell the AgroTwin team.",
             retryable: true,
             technical,
           };

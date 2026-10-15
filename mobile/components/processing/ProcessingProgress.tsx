@@ -4,15 +4,37 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTim
 import Svg, { Circle } from "react-native-svg";
 import { Check, Clock } from "lucide-react-native";
 import { useTheme } from "@/hooks/useTheme";
-import { isJobActive } from "@/services/processing";
+import { isJobActive, jobKind } from "@/services/processing";
 import type { ProcessingJob } from "@/types";
 import { formatNumber } from "@/utils/format";
 import { Blueprint, Button, IconBox, ProgressTrack, AppText } from "@/components/ui";
 
 function jobTitle(job: ProcessingJob): string {
-  if (job.status === "FAILED") return "Processing failed";
-  if (job.status === "COMPLETED") return job.steps.length > 2 ? "Your digital twin is ready" : "Done";
-  return job.steps.length > 2 ? "Creating your digital twin" : job.steps.length === 2 ? "Rebuilding the field map" : "Recomputing the analysis";
+  const kind = jobKind(job);
+  if (job.status === "FAILED") {
+    if (kind === "detailed") return "The detailed map could not be made";
+    if (kind === "gcp") return "The map could not be lined up";
+    return "Making the map failed";
+  }
+  if (job.status === "COMPLETED") return kind === "detailed" ? "Your detailed map is ready" : kind === "full" ? "Your field map is ready" : "Done";
+  switch (kind) {
+    case "detailed":
+      return "Making the detailed map";
+    case "gcp":
+      return "Lining the map up with your surveyed points";
+    case "full":
+      return "Making your field map";
+    case "mosaic":
+      return "Rebuilding the field map";
+    default:
+      return "Re-checking crop health";
+  }
+}
+
+/** What to expect while it runs (the detailed map takes hours). */
+function jobNote(job: ProcessingJob): string {
+  if (jobKind(job) === "detailed") return "Usually a few hours. The quick map stays until then — you can use it meanwhile.";
+  return "You can leave this screen — progress updates automatically.";
 }
 
 /** Slowly rotating dashed reticle (canvas `agroSpin` 3.4 s). */
@@ -47,7 +69,8 @@ export function ProcessingHero({ job, surveyName, imageCount }: ProcessingHeroPr
   const done = job.steps.filter((s) => s.status === "complete").length;
   const currentIndex = job.steps.findIndex((s) => s.key === job.current_step);
   const stepNo = failed ? Math.max(currentIndex + 1, 1) : Math.min(done + 1, total);
-  const current = job.steps[Math.max(currentIndex, 0)]?.label ?? (job.status === "COMPLETED" ? "Complete" : "Waiting");
+  const currentStep = job.steps[Math.max(currentIndex, 0)];
+  const current = currentStep?.label ?? (job.status === "COMPLETED" ? "Complete" : "Waiting");
   const note = [surveyName, imageCount != null ? `${formatNumber(imageCount)} images` : null].filter(Boolean).join(" · ");
 
   return (
@@ -59,7 +82,9 @@ export function ProcessingHero({ job, surveyName, imageCount }: ProcessingHeroPr
         {jobTitle(job)}
       </AppText>
       <AppText variant="bodySm" tone="muted" style={{ marginTop: 6, textAlign: "center" }}>
-        {failed ? (job.error_message ?? "The backend reported a failure.") : `${note}${note ? ". " : ""}You can leave this screen — progress updates automatically.`}
+        {failed
+          ? `${job.error_message ?? "Something went wrong on the server."}${jobKind(job) === "detailed" ? " The quick map is still there." : ""}`
+          : `${note}${note ? ". " : ""}${jobNote(job)}`}
       </AppText>
       <View style={{ width: "100%", marginTop: 18 }}>
         <ProgressTrack fraction={done / total} color={failed ? colors.problem : colors.accent} accessibilityLabel={`Step ${stepNo} of ${total}`} />
@@ -68,10 +93,15 @@ export function ProcessingHero({ job, surveyName, imageCount }: ProcessingHeroPr
         <AppText variant="small" tone="muted">
           Step {stepNo} of {total}
         </AppText>
-        <AppText variant="small" tone="muted" numberOfLines={1}>
+        <AppText variant="small" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
           {current}
         </AppText>
       </View>
+      {active && currentStep?.note ? (
+        <AppText variant="small" tone="muted" style={{ alignSelf: "flex-end", marginTop: 2 }} numberOfLines={1}>
+          {currentStep.note}
+        </AppText>
+      ) : null}
     </Blueprint>
   );
 }
@@ -97,9 +127,14 @@ export function ProcessingSteps({ job }: ProcessingStepsProps) {
             <View style={styles.glyph}>
               {done ? <Check size={16} color={color} strokeWidth={2.2} /> : running || failed ? <Clock size={16} color={color} strokeWidth={1.8} /> : <View style={{ width: 9, height: 9, borderWidth: 1, borderColor: color }} />}
             </View>
-            <AppText variant={running ? "bodyStrong" : "body"} style={{ flex: 1 }}>
-              {step.label}
-            </AppText>
+            <View style={{ flex: 1 }}>
+              <AppText variant={running ? "bodyStrong" : "body"}>{step.label}</AppText>
+              {running && step.note ? (
+                <AppText variant="small" tone="muted">
+                  {step.note}
+                </AppText>
+              ) : null}
+            </View>
             <AppText variant="small" tone="muted">
               {note}
             </AppText>
@@ -126,7 +161,7 @@ export function ProcessingProgress({ job, onRetry, retrying = false, compact = f
     <View style={{ gap: 20 }}>
       <ProcessingHero job={job} surveyName={surveyName} imageCount={imageCount} />
       {!compact ? <ProcessingSteps job={job} /> : null}
-      {job.status === "FAILED" && onRetry ? <Button label="Retry processing" size="lg" onPress={onRetry} loading={retrying} fullWidth /> : null}
+      {job.status === "FAILED" && onRetry ? <Button label="Try again" size="lg" onPress={onRetry} loading={retrying} fullWidth /> : null}
     </View>
   );
 }

@@ -105,7 +105,8 @@ function NewUser() {
       className="rounded-xl border border-border bg-surface p-5 text-sm space-y-3"
     >
       <h2 className="font-semibold">New account</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
+      {/* grid-cols-1 (minmax(0, 1fr)): the role list's long option texts no longer widen the form past a phone's screen */}
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
         <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-10 text-base" />
         <Input
           type="email"
@@ -118,7 +119,7 @@ function NewUser() {
         <select
           value={role}
           onChange={(e) => setRole(e.target.value as UserRole)}
-          className="h-10 rounded-lg border border-input bg-transparent px-2.5 text-base sm:text-sm"
+          className="h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-base sm:text-sm"
         >
           {ROLES.map((r) => (
             <option key={r} value={r}>
@@ -155,7 +156,7 @@ function UserRow({ user }: { user: User }) {
   const self = me?.id === user.id;
 
   return (
-    <div className="flex flex-col gap-2 border-b border-border p-4 last:border-b-0 sm:flex-row sm:items-center">
+    <div className="flex flex-col gap-2 border-b border-border p-4 last:border-b-0 @2xl:flex-row @2xl:items-center">
       <div className="min-w-0 flex-1">
         <div className={`font-medium ${user.is_active ? "" : "text-muted-foreground line-through"}`}>
           {user.name ?? user.email} {self && <span className="text-xs text-muted-foreground">(you)</span>}

@@ -9,3 +9,4 @@ export * from "./processing";
 export * from "./ai";
 export * from "./health";
 export * from "./auth";
+export * from "./gcp";

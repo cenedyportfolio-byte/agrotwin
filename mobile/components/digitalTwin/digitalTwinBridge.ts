@@ -36,7 +36,23 @@ export type HostToViewerMessage =
   | { type: "RESET_VIEW" }
   /** Look straight down at a point, e.g. where a drone photo was taken. Older web builds ignore it. */
   | { type: "FOCUS_POINT"; lat: number; lon: number }
+  /** A zone / target sheet was closed: drop the page's highlight. Older web builds ignore it. */
+  | { type: "CLEAR_SELECTION" }
   | { type: "PING" };
+
+/** A ground control target tapped in the viewer (shown in the app's own sheet). */
+export interface ViewerGcp {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Surface height in the photogrammetry's datum, or the GCP file's elevation. */
+  height_m: number | null;
+  size_m: number | null;
+  /** "detected" in the map, or "surveyed" (the farmer's GCP file). */
+  source: string;
+  rtk: boolean;
+}
 
 export type SplatStatus = "idle" | "loading" | "loaded" | "missing" | "error";
 
@@ -46,9 +62,10 @@ export type ViewerToHostMessage =
   | { type: "MODE_CHANGED"; mode: TwinMode }
   | { type: "SPLAT_STATUS"; status: SplatStatus; detail?: string }
   | { type: "LAYER_ERROR"; message: string }
+  | { type: "GCP_SELECTED"; gcp: ViewerGcp | null }
   | { type: "PONG" };
 
-const VIEWER_TYPES = new Set(["VIEWER_READY", "ZONE_SELECTED", "MODE_CHANGED", "SPLAT_STATUS", "LAYER_ERROR", "PONG"]);
+const VIEWER_TYPES = new Set(["VIEWER_READY", "ZONE_SELECTED", "MODE_CHANGED", "SPLAT_STATUS", "LAYER_ERROR", "GCP_SELECTED", "PONG"]);
 
 /** URL of the existing web viewer for a survey, in embedded mode (no site chrome, bridge enabled). */
 export function buildViewerUrl(
@@ -78,62 +95,14 @@ export function hostMessageScript(message: HostToViewerMessage): string {
   return `(function(){try{window.dispatchEvent(new CustomEvent('agrotwin:host-message',{detail:${payload}}));}catch(e){}})();true;`;
 }
 
-export const HIDE_WEB_CHROME_CSS = `
-  .pointer-events-none.absolute.inset-x-0.top-0 { display: none !important; }
-  div.pointer-events-none.absolute[class*="top-14"] { display: none !important; }
-  div.pointer-events-none.absolute[class*="top-20"] { display: none !important; }
-  .pointer-events-none.absolute.right-2 { display: none !important; }
-  .pointer-events-none.absolute.right-4 { display: none !important; }
-  .pointer-events-none.absolute.inset-x-0.bottom-0 { display: none !important; }
-  div[class*="rounded-xl"]:has(button) { display: none !important; }
-`;
-
-export const injectedHideWebChromeScript = `(function(){
-  try {
-    var css = "${HIDE_WEB_CHROME_CSS.replace(/\n/g, " ").replace(/\s+/g, " ").trim()}";
-    var style = document.getElementById('agrotwin-hide-chrome');
-    if (!style) {
-      style = document.createElement('style');
-      style.id = 'agrotwin-hide-chrome';
-      style.innerHTML = css;
-      (document.head || document.documentElement).appendChild(style);
-    }
-    function cleanWebControls() {
-      var bars = document.querySelectorAll('.pointer-events-none.absolute.inset-x-0.top-0, .pointer-events-none.absolute.inset-x-0.bottom-0');
-      bars.forEach(function(el) { el.style.setProperty('display', 'none', 'important'); });
-      var buttons = document.querySelectorAll('button');
-      buttons.forEach(function(b) {
-        var t = (b.textContent || '').trim();
-        if (t.indexOf('Realistic') !== -1 || t === '3D' || t === 'Map' || t === 'Layers') {
-          var bar = b.closest('.pointer-events-none') || b.closest('.pointer-events-auto') || b.parentElement;
-          if (bar && bar !== document.body) bar.style.setProperty('display', 'none', 'important');
-        }
-      });
-    }
-    cleanWebControls();
-    var attempts = 0;
-    var timer = setInterval(function() {
-      cleanWebControls();
-      attempts++;
-      if (attempts > 8) clearInterval(timer);
-    }, 350);
-  } catch (e) {}
-})();true;`;
-
 /**
- * Runs before the page's own scripts: marks the document as embedded so the
- * web page can hide its site chrome even before React hydrates, and injects
- * styles that hide standalone browser controls if the web build predates embed mode.
+ * Runs before the page's own scripts: marks the document as embedded, so the
+ * viewer draws only the map and leaves layers, panels and notices to the app
+ * (frontend useIsEmbedded). The app and the web viewer ship together, so no
+ * class-name-based hiding is needed.
  */
 export const injectedBeforeLoad = `(function(){
   window.__AGROTWIN_EMBED__ = true;
-  try {
-    document.documentElement.setAttribute('data-agrotwin-embed', '1');
-    var css = "${HIDE_WEB_CHROME_CSS.replace(/\n/g, " ").replace(/\s+/g, " ").trim()}";
-    var style = document.createElement('style');
-    style.id = 'agrotwin-hide-chrome';
-    style.innerHTML = css;
-    (document.head || document.documentElement).appendChild(style);
-  } catch (e) {}
+  try { document.documentElement.setAttribute('data-agrotwin-embed', '1'); } catch (e) {}
 })();true;`;
 

@@ -124,7 +124,14 @@ export default function AskAiPage() {
             {history.length === 0 && (
               <div className="flex flex-wrap gap-2">
                 {SUGGESTIONS.map((s) => (
-                  <Button key={s} variant="outline" size="sm" className="rounded-full" onClick={() => send(s)}>
+                  <Button
+                    key={s}
+                    variant="outline"
+                    size="sm"
+                    // a long question wraps on a small phone instead of running off the screen
+                    className="h-auto min-h-7 max-w-full whitespace-normal rounded-full py-1 text-left"
+                    onClick={() => send(s)}
+                  >
                     {s}
                   </Button>
                 ))}

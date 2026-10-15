@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, X } from "lucide-react";
+import { formatTargetSize } from "@/lib/farm";
 import { isMarker, type GroundControlPoint } from "@/lib/types";
 
 /** 36.0969 → 36°05'48.84"N — what a handheld GPS shows by default. */
@@ -38,7 +39,8 @@ async function copyText(text: string): Promise<boolean> {
 export function GcpPanel({ gcp, onClose }: { gcp: GroundControlPoint; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const latLon = `${gcp.lat.toFixed(7)}, ${gcp.lon.toFixed(7)}`;
-  const size = gcp.size_m != null ? ` · ${Math.round(gcp.size_m * 100)} cm` : "";
+  // side × side and area of the checkerboard (a file's surveyed point has none)
+  const size = gcp.source !== "surveyed" && gcp.size_m != null ? formatTargetSize(gcp.size_m) : null;
 
   const copy = async () => {
     if (await copyText(latLon)) {
@@ -58,8 +60,9 @@ export function GcpPanel({ gcp, onClose }: { gcp: GroundControlPoint; onClose: (
               : isMarker(gcp)
                 ? "Small marker"
                 : "Ground control target"}
-            {gcp.source === "surveyed" ? "" : size}
           </div>
+          {/* its own line: in the narrow panel it would otherwise break inside "0.36 m²" */}
+          {size && <div className="whitespace-nowrap text-[11px] text-muted-foreground">{size}</div>}
         </div>
         <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground">
           <X size={15} />

@@ -82,16 +82,36 @@ export function formatPercent(n: number | null | undefined): string {
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
 }
 
-/** "320 m²" below one hectare, "1.23 ha" above. */
-export function formatArea(m2: number | null | undefined): string {
-  if (m2 == null || !Number.isFinite(m2)) return "—";
-  if (m2 >= 10_000) return `${(m2 / 10_000).toFixed(2)} ha`;
-  return `${formatNumber(m2)} m²`;
+const ACRES_PER_HECTARE = 2.47105;
+const M2_PER_ACRE = 4046.86;
+const FEET_PER_METER = 3.28084;
+
+/** "3.2 acres", "14 acres", "0.05 acres" — US farmers think in acres; the backend keeps m² and hectares. */
+export function formatAcres(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (value > 0 && value < 0.005) return "under 0.01 acres";
+  const digits = value >= 10 ? 0 : value >= 1 ? 1 : 2;
+  return `${value.toFixed(digits)} ${value === 1 ? "acre" : "acres"}`;
 }
 
-export function formatHectares(ha: number | null | undefined): string {
+export function acresFromM2(m2: number): number {
+  return m2 / M2_PER_ACRE;
+}
+
+export function acresFromHectares(ha: number): number {
+  return ha * ACRES_PER_HECTARE;
+}
+
+/** An area measured in m² (a spot in the field), in acres. */
+export function formatArea(m2: number | null | undefined): string {
+  if (m2 == null || !Number.isFinite(m2)) return "—";
+  return formatAcres(acresFromM2(m2));
+}
+
+/** A field size stored in hectares, in acres. */
+export function formatFieldArea(ha: number | null | undefined): string {
   if (ha == null || !Number.isFinite(ha)) return "—";
-  return `${ha.toFixed(2)} ha`;
+  return formatAcres(acresFromHectares(ha));
 }
 
 export function formatCoordinate(lat: number | null | undefined, lon: number | null | undefined): string {
@@ -99,9 +119,17 @@ export function formatCoordinate(lat: number | null | undefined, lon: number | n
   return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 }
 
-export function formatMeters(m: number | null | undefined, digits = 1): string {
+/** A height in feet ("400 ft"), from metres. */
+export function formatFeet(m: number | null | undefined, digits = 0): string {
   if (m == null || !Number.isFinite(m)) return "—";
-  return `${m.toFixed(digits)} m`;
+  return `${(m * FEET_PER_METER).toFixed(digits)} ft`;
+}
+
+/** A short distance for a US farmer: inches below a foot, feet above. */
+export function formatDistance(m: number | null | undefined): string {
+  if (m == null || !Number.isFinite(m)) return "—";
+  const ft = m * FEET_PER_METER;
+  return ft < 1 ? `${(ft * 12).toFixed(1)} in` : `${ft.toFixed(1)} ft`;
 }
 
 export function formatConfidence(c: number | null | undefined): string {
@@ -126,4 +154,12 @@ export function greeting(date = new Date()): string {
 /** "2 files", "1 file" */
 export function plural(n: number, noun: string, pluralNoun = `${noun}s`): string {
   return `${formatNumber(n)} ${n === 1 ? noun : pluralNoun}`;
+}
+
+/** A checkerboard target's size from its side length: "60 × 60 cm · 0.36 m²"
+ * (small markers in cm²: "17 × 17 cm · 289 cm²"). Same as the website. */
+export function formatTargetSize(sideM: number): string {
+  const side = Math.round(sideM * 100);
+  const area = sideM * sideM;
+  return `${side} × ${side} cm · ${area < 0.1 ? `${Math.round(area * 10_000)} cm²` : `${area.toFixed(2)} m²`}`;
 }

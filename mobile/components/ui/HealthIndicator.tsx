@@ -3,7 +3,7 @@ import Svg, { Circle } from "react-native-svg";
 import { AlertTriangle, Check } from "lucide-react-native";
 import { iconStroke, type StatusTier } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
-import { formatPercent } from "@/utils/format";
+import { formatFieldArea, formatPercent } from "@/utils/format";
 import type { HealthShares } from "@/utils/health";
 import { IconBox, Swatch } from "./IconBox";
 import { AppText } from "./Text";
@@ -103,7 +103,7 @@ export function HealthLegendColumns({ shares }: { shares: HealthShares }) {
   );
 }
 
-/** Analysis legend: label row with glyph and big number, an 8 px bar, and a hectare note. */
+/** Analysis legend: label row with glyph and big number, an 8 px bar, and an acreage note. */
 export function HealthLegendBars({ shares, areaHectares }: { shares: HealthShares; areaHectares: number | null }) {
   const { colors } = useTheme();
   const items: Array<{ tier: StatusTier; label: string; value: number }> = [
@@ -128,7 +128,7 @@ export function HealthLegendBars({ shares, areaHectares }: { shares: HealthShare
             <View style={{ height: "100%", width: `${Math.max(0, Math.min(100, item.value))}%`, backgroundColor: colors[item.tier] }} />
           </View>
           <AppText variant="small" tone="muted" style={{ marginTop: 4 }}>
-            {areaHectares != null ? `${((areaHectares * item.value) / 100).toFixed(1)} ha of ${areaHectares.toFixed(1)} ha` : "field size not measured yet"}
+            {areaHectares != null ? `${formatFieldArea((areaHectares * item.value) / 100)} of ${formatFieldArea(areaHectares)}` : "field size not measured yet"}
           </AppText>
         </View>
       ))}

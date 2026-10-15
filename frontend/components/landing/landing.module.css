@@ -1,0 +1,1184 @@
+/* AgroTwin landing page (/welcome) — the Claude Design handoff "AgroTwin Landing"
+   in its Industry design system: blueprint frames with registration marks,
+   Barlow Condensed headings over Barlow, Geist Mono for instrument readouts,
+   square corners and hairline rules. Light by default (the design started dark);
+   dark or the device's setting on request. */
+
+.root {
+  --color-bg: #0e1114;
+  --color-surface: #14181c;
+  --s2: #1a1f24;
+  --color-text: #eef0ea;
+  --color-accent: #c6f432;
+  --color-accent-400: #d8fa6e;
+  --color-accent-600: #a8d41f;
+  --color-accent-700: #86ab12;
+  --color-accent-900: #2a330c;
+  --color-divider: #272d33;
+  --line2: #1d2227;
+  --ok: #c6f432;
+  --warn: #eab308;
+  --bad: #ef4444;
+  --shadow-md: 0 3px 14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --font-heading: var(--font-barlow-condensed), system-ui, sans-serif;
+  --font-body: var(--font-barlow), system-ui, sans-serif;
+  --mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  min-height: 100dvh;
+  /* the root layout's <body> is a one-screen-tall flex column: without this
+     the page would shrink to one screen and the sticky header leave with it */
+  flex: none;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  /* clip, not hidden: hidden would make this a scroll container and the
+     sticky header would stop sticking */
+  overflow-x: clip;
+}
+.root[data-theme="light"] {
+  --color-bg: #f4f5f1;
+  --color-surface: #eceee8;
+  --s2: #e3e6de;
+  --color-text: #14181c;
+  --color-accent: #4a6800;
+  --color-accent-400: #5c8000;
+  --color-accent-600: #3d5600;
+  --color-accent-700: #2f4300;
+  --color-accent-900: #e6f2c4;
+  --color-divider: #cfd4ca;
+  --line2: #e0e3da;
+  --ok: #4a7a0c;
+  --warn: #a15c07;
+  --bad: #c02626;
+  --shadow-md: 0 3px 14px rgba(20, 24, 28, 0.12);
+  --shadow-lg: 0 16px 40px rgba(20, 24, 28, 0.16);
+}
+.root a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.root a:hover {
+  color: var(--color-accent-400);
+}
+.root :focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.root ::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.root h1,
+.root h2,
+.root h3 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 600;
+}
+.root p {
+  margin: 0;
+}
+
+/* ── blueprint frame: hairline box with "+" registration marks at the corners ── */
+.blueprint {
+  position: relative;
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
+}
+.corner {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  pointer-events: none;
+}
+.corner::before,
+.corner::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+.corner::before {
+  left: 5px;
+  top: 0;
+  width: 1px;
+  height: 100%;
+}
+.corner::after {
+  top: 5px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+}
+.tl {
+  top: -6px;
+  left: -6px;
+}
+.tr {
+  top: -6px;
+  right: -6px;
+}
+.bl {
+  bottom: -6px;
+  left: -6px;
+}
+.br {
+  bottom: -6px;
+  right: -6px;
+}
+
+/* ── buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.2;
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
+  padding: 6.8px 12.24px;
+}
+.root a.btnGhost,
+.root a.btnGhost:hover {
+  color: var(--color-text);
+}
+.btnGhost {
+  min-height: 42px;
+  padding-inline: 3.4px;
+  border-color: transparent;
+}
+.btnGhost:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+.btnGhost:active {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+.root a.cta,
+.root a.cta:hover {
+  color: var(--color-accent);
+}
+.cta {
+  min-height: 50px;
+  padding: 0 22px;
+  font-size: 16px;
+  border-color: var(--color-accent);
+}
+.cta:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-color: var(--color-accent-400);
+}
+.cta:active {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+/* ── shared section scaffolding ── */
+.section {
+  border-bottom: 1px solid var(--color-divider);
+  scroll-margin-top: 72px;
+}
+.surface {
+  background: var(--color-surface);
+}
+.wrap {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+.sectionInner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 88px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+}
+.sectionHead {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+.kicker {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--color-accent);
+}
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+.h2 {
+  font-size: clamp(36px, 4.2vw, 58px);
+  line-height: 1;
+  text-wrap: balance;
+}
+.h3 {
+  font-size: 26px;
+  line-height: 1.1;
+}
+.h3lg {
+  font-size: 34px;
+  line-height: 1.05;
+}
+.body15 {
+  font-size: 15px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+  text-wrap: pretty;
+}
+.body16 {
+  font-size: 16px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+  text-wrap: pretty;
+}
+.chip {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  color: var(--color-accent);
+}
+.fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+}
+.readout {
+  position: absolute;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider);
+  padding: 6px 9px;
+  line-height: 1.6;
+}
+.accent {
+  color: var(--color-accent);
+}
+.okText {
+  color: var(--ok);
+}
+.warnText {
+  color: var(--warn);
+}
+.muted {
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+}
+
+/* ── header ── */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-divider);
+}
+.headerInner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 12px 28px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+.root a.brand,
+.root a.brand:hover {
+  color: var(--color-text);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.wordmark {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: 0.01em;
+}
+.nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.nav::-webkit-scrollbar {
+  display: none;
+}
+.root a.navLink {
+  padding: 10px 12px;
+  font-size: 14px;
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+}
+.root a.navLink:hover {
+  color: var(--color-accent);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.themeGroup {
+  display: flex;
+  border: 1px solid var(--color-divider);
+}
+.themeBtn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text);
+}
+.themeBtn:hover {
+  color: var(--color-accent);
+}
+.themeBtn[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+/* ── hero ── */
+.hero {
+  position: relative;
+}
+.contours {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    repeating-radial-gradient(ellipse at 78% 30%, transparent 0 38px, var(--line2) 38px 39px),
+    linear-gradient(var(--line2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line2) 1px, transparent 1px);
+  background-size: auto, 80px 80px, 80px 80px;
+  mask-image: linear-gradient(180deg, #000 40%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent);
+}
+.heroInner {
+  position: relative;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 72px 28px 64px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+  gap: 56px;
+  align-items: center;
+}
+.heroCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.badge {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  padding: 6px 12px;
+}
+.h1 {
+  font-size: clamp(48px, 6.4vw, 92px);
+  line-height: 0.94;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.lead {
+  max-width: 560px;
+  font-size: 18px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+  text-wrap: pretty;
+}
+.ctaRow {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.viewer {
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  container-type: inline-size;
+}
+.viewerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-divider);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+  flex-wrap: wrap;
+}
+.stage {
+  position: relative;
+  aspect-ratio: 16 / 11;
+  overflow: hidden;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--color-text) 4%, transparent) 0 10px,
+    transparent 10px 20px
+  );
+}
+.crosshair {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--color-accent), var(--color-accent)) 50% 50% / 1px 36px no-repeat,
+    linear-gradient(var(--color-accent), var(--color-accent)) 50% 50% / 36px 1px no-repeat;
+  opacity: 0.8;
+}
+.telemetry {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  border: 1px solid var(--color-divider);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.telemetryTitle {
+  color: var(--color-accent);
+  letter-spacing: 0.08em;
+}
+.legend {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  border: 1px solid var(--color-divider);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 150px;
+}
+.legendLabel {
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+  margin-bottom: 6px;
+}
+.ramp {
+  height: 6px;
+}
+.rampEnds {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.health {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-bg) 90%, transparent);
+  border: 1px solid var(--color-divider);
+  padding: 7px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.healthItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.healthPct {
+  color: var(--color-text);
+}
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  border-top: 1px solid var(--color-divider);
+}
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 58px;
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  border: 0;
+  border-right: 1px solid var(--color-divider);
+  background: transparent;
+  color: var(--color-text);
+}
+.tab:hover {
+  color: var(--color-accent);
+}
+.tab[aria-selected="true"] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-weight: 600;
+}
+.tabNo {
+  font-family: var(--mono);
+  font-size: 10px;
+  opacity: 0.85;
+}
+/* a narrow viewer (phones): the telemetry box would sit on the legend, and the
+   health readout would wrap onto three lines over half the picture — it spans
+   the bottom instead, icon and share only (the words stay for screen readers) */
+@container (max-width: 430px) {
+  .telemetry {
+    display: none;
+  }
+  .health {
+    left: 12px;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .healthWord {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ── key numbers ── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+}
+.metric {
+  padding: 30px 28px;
+  border-left: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.metricTag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--color-accent);
+}
+.metricValue {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 46px;
+  line-height: 1;
+}
+.metricDesc {
+  font-size: 14px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+  text-wrap: pretty;
+}
+
+/* ── two-stage engine ── */
+.stageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+  gap: 24px;
+}
+.stageCard {
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stageTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pipeline li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-divider);
+}
+.arrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--color-accent);
+}
+.bestFor {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── multispectral & computer vision ── */
+.capGrid {
+  display: grid;
+  /* 300 px (the design had 240): the full-width radiometry card keeps every
+     track alive, so at 240 a desktop row had four tracks for the three cards
+     and an empty column on the right; at 300 they fill the row */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 24px;
+}
+.radiometry {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  container-type: inline-size;
+}
+.radiometryCopy {
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chipRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+.bandTable {
+  border-left: 1px solid var(--color-divider);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.bandRow {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr repeat(3, 0.7fr);
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line2);
+  align-items: center;
+}
+.bandHead {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+.bandName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.swatch {
+  width: 8px;
+  height: 8px;
+  flex: none;
+}
+.bandNm {
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+/* stacked (narrow): the table sits under the copy, so its rule moves to the top */
+@container (max-width: 759px) {
+  .bandTable {
+    border-left: 0;
+    border-top: 1px solid var(--color-divider);
+  }
+}
+.capCard {
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.figure {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--color-divider);
+  overflow: hidden;
+}
+.rows {
+  background: repeating-linear-gradient(
+    128.5deg,
+    transparent 0 13px,
+    color-mix(in srgb, var(--ok) 55%, transparent) 13px 15px
+  );
+}
+.canopy {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.spread {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bar {
+  height: 5px;
+  background: var(--line2);
+  margin: 6px 0;
+}
+.barFill {
+  height: 100%;
+  background: var(--warn);
+}
+.halted {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn);
+}
+
+/* ── field AI ── */
+.aiInner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 88px 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 48px;
+  align-items: center;
+}
+.aiCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.aiLead {
+  max-width: 480px;
+  font-size: 17px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--color-text) 82%, transparent);
+  text-wrap: pretty;
+}
+.terminal {
+  background: var(--color-bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  min-width: 0;
+}
+.terminalBar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+  flex-wrap: wrap;
+}
+.terminalBody {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.question {
+  display: flex;
+  gap: 10px;
+}
+.answer {
+  border-left: 1px solid var(--color-accent);
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.answerTag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--color-accent);
+}
+.mono {
+  font-family: var(--mono);
+}
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sourcesTag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+.sourceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.root a.source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 5px 9px;
+  border: 1px solid var(--color-divider);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.root a.source:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* ── console + companion ── */
+.devices {
+  display: flex;
+  gap: 36px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.console {
+  flex: 1 1 560px;
+  min-width: 0;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+.consoleBar {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-divider);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.consoleBody {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  flex: 1;
+}
+.layers {
+  border-right: 1px solid var(--color-divider);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.layersTitle {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+  padding: 4px 6px 8px;
+}
+.layerBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+}
+.layerBtn:hover {
+  border-color: var(--color-divider);
+}
+.checkbox {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1px solid var(--color-divider);
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: var(--color-bg);
+}
+.layerBtn[aria-pressed="true"] .checkbox {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+.consoleImage {
+  position: relative;
+  min-height: 380px;
+  height: 100%;
+}
+/* a narrow console (phones): the layer list goes above the picture as a row */
+@container (max-width: 520px) {
+  .consoleBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .layers {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-divider);
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .layersTitle {
+    flex-basis: 100%;
+  }
+  .consoleImage {
+    min-height: 240px;
+  }
+}
+.phoneFrame {
+  flex: none;
+  max-width: 100%;
+  padding: 12px;
+  margin: 0 auto;
+}
+.phone {
+  width: 300px;
+  max-width: 100%;
+  height: 620px;
+  border: 1px solid var(--color-divider);
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.phoneStatus {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.phoneHead {
+  padding: 6px 16px 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.phoneTitle {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.05;
+}
+.phoneSub {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.phoneStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--color-divider);
+}
+.phoneStat {
+  padding: 12px 16px;
+}
+.phoneStat + .phoneStat {
+  border-left: 1px solid var(--color-divider);
+}
+.phoneStatValue {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 1;
+}
+.phoneStatLabel {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.phoneMap {
+  position: relative;
+  height: 170px;
+  flex: none;
+  margin: 12px 16px;
+  border: 1px solid var(--color-divider);
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--color-text) 5%, transparent) 0 8px,
+    transparent 8px 16px
+  );
+}
+.boundary {
+  position: absolute;
+  inset: 22px 30px 26px 24px;
+  border: 1.5px dashed var(--color-accent);
+  transform: skew(-6deg);
+}
+.boundaryLabel {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.ranked {
+  padding: 0 16px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.spotList {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 16px 0;
+}
+.spot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--line2);
+}
+.spotName {
+  font-size: 14px;
+  font-weight: 500;
+}
+.spotWord {
+  font-size: 12px;
+}
+.spotDist {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+
+/* ── footer ── */
+.footerInner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 110px 28px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+}
+.footerBase {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 22px;
+  border-top: 1px solid var(--color-divider);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+
+/* ── small phones: the header becomes two rows — brand and Sign In on top,
+   the section links (scrollable) and the theme switch below — and the page
+   margins tighten so nothing runs off a 320 px screen ── */
+@media (max-width: 600px) {
+  .headerInner {
+    gap: 10px 12px;
+    padding: 10px 16px;
+  }
+  .actions {
+    display: contents;
+  }
+  .brand {
+    order: 1;
+  }
+  .signIn {
+    order: 2;
+    margin-left: auto;
+  }
+  .nav {
+    order: 3;
+    flex: 1 1 calc(100% - 150px);
+  }
+  .themeGroup {
+    order: 4;
+  }
+  .themeBtn {
+    width: 38px;
+    height: 38px;
+  }
+  .section {
+    scroll-margin-top: 120px;
+  }
+  .heroInner,
+  .sectionInner,
+  .aiInner,
+  .footerInner {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .heroInner {
+    padding-top: 48px;
+    gap: 40px;
+  }
+  .sectionInner,
+  .aiInner {
+    padding-top: 64px;
+    padding-bottom: 64px;
+  }
+  .metric {
+    padding: 24px 20px;
+  }
+  .stageCard,
+  .radiometryCopy,
+  .capCard {
+    padding: 22px;
+  }
+}

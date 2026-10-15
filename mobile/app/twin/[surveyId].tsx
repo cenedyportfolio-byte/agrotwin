@@ -14,7 +14,8 @@ import { Button, ErrorState, IconButton, LoadingState, Screen, AppText } from "@
 import { DigitalTwinWebView, type DigitalTwinHandle } from "@/components/digitalTwin/DigitalTwinWebView";
 import { TwinModeCard } from "@/components/digitalTwin/TwinStatusCard";
 import { TwinModeSelector } from "@/components/digitalTwin/TwinModeSelector";
-import type { SplatStatus, TwinMode } from "@/components/digitalTwin/digitalTwinBridge";
+import type { SplatStatus, TwinMode, ViewerGcp } from "@/components/digitalTwin/digitalTwinBridge";
+import { GcpSheet } from "@/components/map/GcpSheet";
 
 const NEXT_MODE: Record<TwinMode, TwinMode> = { "field-map": "3d-twin", "3d-twin": "photorealistic", photorealistic: "field-map" };
 
@@ -32,6 +33,7 @@ export default function DigitalTwinScreen() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(zoneParam ?? null);
   const [splat, setSplat] = useState<{ status: SplatStatus; detail?: string } | null>(null);
   const [layerError, setLayerError] = useState<string | null>(null);
+  const [gcp, setGcp] = useState<ViewerGcp | null>(null);
 
   const survey = useSurvey(surveyId);
   const analysis = useAnalysis(surveyId);
@@ -69,7 +71,7 @@ export default function DigitalTwinScreen() {
   const tools: Array<{ label: string; icon: typeof Layers; onPress: () => void; selected?: boolean }> = [
     { label: "Layers", icon: Layers, onPress: () => surveyId && router.push({ pathname: "/map/[surveyId]", params: { surveyId } }) },
     { label: `Switch to ${NEXT_MODE[mode] === "field-map" ? "field map" : NEXT_MODE[mode] === "3d-twin" ? "3D twin" : "photorealistic"}`, icon: MapIcon, onPress: () => changeMode(NEXT_MODE[mode]) },
-    { label: "Focus field", icon: Crosshair, onPress: () => twinRef.current?.reload() },
+    { label: "Focus field", icon: Crosshair, onPress: () => twinRef.current?.send({ type: "RESET_VIEW" }) },
     { label: advanced ? "Hide technical layers" : "Show technical layers", icon: Info, onPress: () => setAdvanced((v) => !v), selected: advanced },
   ];
 
@@ -86,6 +88,7 @@ export default function DigitalTwinScreen() {
         onModeChanged={setMode}
         onSplatStatus={(status, detail) => setSplat({ status, detail })}
         onLayerError={setLayerError}
+        onGcpSelected={setGcp}
       />
 
       <View style={[styles.topBar, { top: insets.top + 10 }]} pointerEvents="box-none">
@@ -150,6 +153,13 @@ export default function DigitalTwinScreen() {
           onOpenPhotorealistic={() => changeMode("photorealistic")}
         />
       </View>
+      <GcpSheet
+        gcp={gcp}
+        onClose={() => {
+          setGcp(null);
+          twinRef.current?.send({ type: "CLEAR_SELECTION" });
+        }}
+      />
     </View>
   );
 }

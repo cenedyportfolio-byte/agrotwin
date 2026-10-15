@@ -47,3 +47,19 @@ export async function pickAssetFile(): Promise<LocalFile | null> {
   const a = result.assets[0];
   return { uri: a.uri, name: a.name, type: a.mimeType ?? "application/octet-stream" };
 }
+
+const GCP_SUFFIXES = /\.(csv|txt)$/i;
+
+/** Picks the GPS file of the ground targets (CSV from the GPS, or OpenDroneMap's gcp_list.txt). */
+export async function pickGcpFile(): Promise<LocalFile | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    // some phones label CSV files as plain text or as unknown binary
+    type: ["text/csv", "text/comma-separated-values", "text/plain", "application/octet-stream", "*/*"],
+    multiple: false,
+    copyToCacheDirectory: true,
+  });
+  if (result.canceled || !result.assets[0]) return null;
+  const a = result.assets[0];
+  if (!GCP_SUFFIXES.test(a.name)) throw new Error("Choose a .csv or .txt file — the points file from your GPS, or gcp_list.txt.");
+  return { uri: a.uri, name: a.name, type: a.mimeType ?? "text/plain" };
+}

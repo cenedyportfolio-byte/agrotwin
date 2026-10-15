@@ -58,8 +58,14 @@ interface DigitalTwinState extends Record<ShowKey, boolean> {
   selectedDetectionId: string | null;
   setSelectedDetectionId: (id: string | null) => void;
 
+  /** A one-off camera move asked for by the mobile app; `seq` makes a repeat count. */
+  cameraRequest: CameraRequest | null;
+  requestCamera: (request: { kind: "home" } | { kind: "point"; lat: number; lon: number }) => void;
+
   toggleLayer: (key: LayerKey) => void;
 }
+
+export type CameraRequest = ({ kind: "home" } | { kind: "point"; lat: number; lon: number }) & { seq: number };
 
 const LAYER_STATE_KEY: Record<LayerKey, ShowKey> = {
   fieldBoundary: "showFieldBoundary",
@@ -94,6 +100,9 @@ export const useDigitalTwinStore = create<DigitalTwinState>((set) => ({
 
   selectedDetectionId: null,
   setSelectedDetectionId: (id) => set({ selectedDetectionId: id }),
+
+  cameraRequest: null,
+  requestCamera: (request) => set((s) => ({ cameraRequest: { ...request, seq: (s.cameraRequest?.seq ?? 0) + 1 } })),
 
   showFieldBoundary: true,
   showMesh: true,

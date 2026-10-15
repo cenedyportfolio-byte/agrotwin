@@ -169,6 +169,8 @@ export interface ProcessingStep {
   key: string;
   label: string;
   status: "pending" | "complete" | "failed";
+  /** Progress inside a long step ("matching the photos, stage 4 of 13"). */
+  note?: string;
 }
 
 export type JobStatus =
@@ -192,6 +194,40 @@ export interface ProcessingJob {
   error_message: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+/** What was read from a ground control points file (backend gcp_file_service). */
+export interface GcpFileInfo {
+  format: "csv-latlon" | "csv-projected" | "odm";
+  crs: string;
+  rtk: boolean;
+  notes: string[];
+  odm_observations: number;
+  queued?: boolean;
+  filename?: string;
+  points: { name: string; lat: number; lon: number; elevation_m: number | null }[];
+}
+
+export type GcpReportStatus = "none" | "waiting" | "no_match" | "check_only" | "applied" | "aligned" | "rejected";
+
+/** GET /api/surveys/{id}/gcp-check — how the detailed map compares with the surveyed points. */
+export interface GcpCheck {
+  file: GcpFileInfo | null;
+  report: {
+    rtk: boolean;
+    status: GcpReportStatus;
+    message: string;
+    model: { shift_m: number; rotation_deg: number; scale: number; rms_m: number; points_used: number } | null;
+    points: {
+      name: string;
+      lat: number;
+      lon: number;
+      used: boolean;
+      matched: string | null;
+      before_m: number | null;
+      after_m: number | null;
+    }[];
+  } | null;
 }
 
 /** GET /api/surveys/{id}/field-boundary */

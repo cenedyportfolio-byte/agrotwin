@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Bot, Camera, Check, Cuboid, Map as MapIcon, RefreshCw, Sprout } from "lucide-react-native";
+import { BookOpen, Bot, Camera, Check, Cuboid, Map as MapIcon, RefreshCw, Sprout, Upload } from "lucide-react-native";
 import { iconStroke, layout } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useRefresh } from "@/hooks/useRefresh";
@@ -9,10 +9,10 @@ import { useFields } from "@/features/fields/hooks";
 import { useSurveys } from "@/features/surveys/hooks";
 import { useAnalysis } from "@/features/analysis/hooks";
 import { useProcessingJob } from "@/features/processing/hooks";
-import { enrichZones } from "@/features/analysis/zones";
+import { enrichZones, mainSpots } from "@/features/analysis/zones";
 import { useAuth } from "@/providers/AuthProvider";
 import { useUiStore } from "@/stores/uiStore";
-import { formatDate, formatDateTime, formatNumber, formatShortDate, greeting, relativeDay } from "@/utils/format";
+import { formatDate, formatDateTime, formatFieldArea, formatNumber, formatShortDate, greeting, relativeDay } from "@/utils/format";
 import { aggregateShares, overallHealth, sharesFromPercents } from "@/utils/health";
 import { parseGeometry } from "@/utils/geo";
 import { Blueprint, Button, EmptyState, ErrorState, HealthBar, HealthDonut, HealthLegendRows, IconButton, LoadingState, RefreshingNote, Screen, SectionHeader, Swatch, AppText } from "@/components/ui";
@@ -58,7 +58,8 @@ export default function HomeScreen() {
     if (!analysis.data) return [];
     const boundary = parseGeometry(recentField?.boundary_geojson);
     const center = recentField?.center_lat != null && recentField.center_lon != null ? { latitude: recentField.center_lat, longitude: recentField.center_lon } : null;
-    return enrichZones(analysis.data.detections, { center, boundary }).filter((z) => z.zone.severity !== "low").slice(0, 2);
+    // ranked: the worst and biggest first (same order as the website)
+    return mainSpots(enrichZones(analysis.data.detections, { center, boundary })).slice(0, 3);
   }, [analysis.data, recentField]);
 
   const header = (
@@ -104,6 +105,8 @@ export default function HomeScreen() {
           message="Add a field and fly it once — we'll take it from there."
           actionLabel="Add your first field"
           onAction={() => router.push("/upload")}
+          secondaryLabel="How to fly your field"
+          onSecondary={() => router.push("/flight-guide")}
         />
       </Screen>
     );
@@ -147,20 +150,20 @@ export default function HomeScreen() {
                   <HealthBar shares={totals.shares} height={10} />
                 </View>
                 <AppText variant="small" tone="muted" style={{ marginTop: 10 }}>
-                  Based on {totals.analysed} analysed {totals.analysed === 1 ? "field" : "fields"} across {totals.hectares.toFixed(1)} ha
+                  Based on {totals.analysed} analysed {totals.analysed === 1 ? "field" : "fields"} across {formatFieldArea(totals.hectares)}
                   {totals.latest ? ` · last updated ${relativeDay(totals.latest)}` : ""}
                 </AppText>
               </>
             ) : (
               <AppText variant="bodySm" tone="muted" style={{ marginTop: 10 }}>
-                {processing ? "Your latest survey is still being processed — health appears here when it finishes." : "Process a survey to see measured field health."}
+                {processing ? "Your latest flight is still being processed — crop health appears here when it finishes." : "Upload a flight to see how your fields are doing."}
               </AppText>
             )}
           </Blueprint>
 
           {processing && job && recentSurvey ? (
             <View style={{ marginBottom: 24 }}>
-              <SectionHeader title="Processing" actionLabel="See steps" onAction={() => router.push({ pathname: "/processing/[surveyId]", params: { surveyId: recentSurvey.id } })} />
+              <SectionHeader title="Making the map" actionLabel="See steps" onAction={() => router.push({ pathname: "/processing/[surveyId]", params: { surveyId: recentSurvey.id } })} />
               <ProcessingProgress job={job} compact surveyName={recentSurvey.name} imageCount={recentSurvey.image_count} />
             </View>
           ) : null}
@@ -168,7 +171,7 @@ export default function HomeScreen() {
           {recentSurvey ? (
             <View style={{ marginBottom: 24 }}>
               <SectionHeader
-                title="Needs your attention"
+                title="Spots to check"
                 actionLabel={zoneCount ? `All ${zoneCount}` : undefined}
                 onAction={() => router.push({ pathname: "/analysis/[surveyId]", params: { surveyId: recentSurvey.id } })}
                 meta={!zoneCount && analysis.data ? "Nothing flagged" : undefined}
@@ -180,14 +183,14 @@ export default function HomeScreen() {
               ) : !analysis.data ? (
                 <Blueprint padding={14}>
                   <AppText variant="bodySm" tone="muted">
-                    {processing ? "Zones appear here once the analysis finishes." : "No analysis yet for the latest survey. Open it to start processing."}
+                    {processing ? "Spots appear here once crop health is checked." : "No results yet for the latest flight. Open it to make the map."}
                   </AppText>
                 </Blueprint>
               ) : attention.length === 0 ? (
                 <Blueprint padding={14}>
                   <View style={styles.statusRow}>
                     <Check size={18} color={colors.healthy} strokeWidth={1.8} />
-                    <AppText variant="bodySm">{zoneCount ? "Only low-priority areas were flagged in the latest survey." : "No areas were flagged in the latest survey."}</AppText>
+                    <AppText variant="bodySm">{zoneCount ? "Only very small spots were flagged in the latest flight." : "No spots were flagged in the latest flight."}</AppText>
                   </View>
                 </Blueprint>
               ) : (
@@ -224,7 +227,7 @@ export default function HomeScreen() {
 
           {recentSurvey ? (
             <View style={{ marginBottom: 24 }}>
-              <SectionHeader title="Recent survey" />
+              <SectionHeader title="Latest flight" />
               <Blueprint padding={16}>
                 <AppText variant="cardTitle" numberOfLines={2}>
                   {recentSurvey.name}
@@ -241,7 +244,7 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.fact}>
                     <Camera size={18} color={colors.accent} strokeWidth={iconStroke} />
-                    <AppText variant="bodySm">{formatNumber(recentSurvey.frame_count || recentSurvey.image_count)} images</AppText>
+                    <AppText variant="bodySm">{formatNumber(recentSurvey.frame_count || recentSurvey.image_count)} photos</AppText>
                   </View>
                 </View>
                 <View style={[styles.statusRow, { marginTop: 14 }]}>
@@ -249,20 +252,20 @@ export default function HomeScreen() {
                     <>
                       <Check size={18} color={colors.healthy} strokeWidth={1.8} />
                       <AppText variant="bodySmStrong" tone="healthy">
-                        Analysis complete
+                        Crop health checked
                       </AppText>
                     </>
                   ) : (
                     <>
                       <Swatch color={processing ? colors.accent : colors.neutral} size={10} />
                       <AppText variant="bodySmStrong" tone="muted">
-                        {processing ? "Processing" : "No analysis yet"}
+                        {processing ? "Making the map" : "No results yet"}
                       </AppText>
                     </>
                   )}
                 </View>
                 <Button
-                  label={analysis.data ? "View results" : "Open survey"}
+                  label={analysis.data ? "View results" : "Open the flight"}
                   size="md"
                   fullWidth
                   style={{ marginTop: 7 }}
@@ -282,8 +285,10 @@ export default function HomeScreen() {
               {[
                 { label: "View map", icon: MapIcon, go: () => recentSurvey && router.push({ pathname: "/map/[surveyId]", params: { surveyId: recentSurvey.id } }) },
                 { label: "Ask AI", icon: Bot, go: () => router.push(recentSurvey ? { pathname: "/ai/chat", params: { surveyId: recentSurvey.id } } : "/ai/chat") },
-                { label: "Survey images", icon: Camera, go: () => recentSurvey && router.push({ pathname: "/gallery/[surveyId]", params: { surveyId: recentSurvey.id } }) },
-                { label: "Digital twin", icon: Cuboid, go: () => recentSurvey && router.push({ pathname: "/twin/[surveyId]", params: { surveyId: recentSurvey.id } }) },
+                { label: "Flight photos", icon: Camera, go: () => recentSurvey && router.push({ pathname: "/gallery/[surveyId]", params: { surveyId: recentSurvey.id } }) },
+                { label: "3D view", icon: Cuboid, go: () => recentSurvey && router.push({ pathname: "/twin/[surveyId]", params: { surveyId: recentSurvey.id } }) },
+                { label: "Upload a flight", icon: Upload, go: () => router.push("/upload") },
+                { label: "How to fly", icon: BookOpen, go: () => router.push("/flight-guide") },
               ].map((q) => (
                 <Blueprint key={q.label} padding={14} style={styles.quick} onPress={q.go} accessibilityLabel={q.label}>
                   <q.icon size={24} color={colors.accent} strokeWidth={iconStroke} />

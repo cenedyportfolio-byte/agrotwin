@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -18,11 +18,21 @@ export const metadata: Metadata = {
   description: "Your Field. Your Digital Twin. Your Insights.",
 };
 
+// The full screen on phones with a notch or home bar (the frame keeps clear of
+// them with env(safe-area-inset-*), components/layout/AppShell.tsx).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("agrotwin-theme");
-    var theme = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    // light unless the visitor chose otherwise; "system" (the landing page's
+    // third choice) follows the device
+    var theme = stored === "dark" ? "dark" : stored === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", theme);
   } catch (e) {}
 })();

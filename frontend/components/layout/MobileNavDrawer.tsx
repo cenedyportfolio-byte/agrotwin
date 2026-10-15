@@ -15,7 +15,7 @@ export function MobileNavDrawer({ open, onClose }: { open: boolean; onClose: () 
   return (
     <div className="fixed inset-0 z-50 md:hidden">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-y-0 left-0 w-64 bg-surface border-r border-border flex flex-col">
+      <div className="absolute inset-y-0 left-0 w-64 max-w-[85vw] bg-surface border-r border-border flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <div className="flex items-center justify-between px-4 h-16 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white">

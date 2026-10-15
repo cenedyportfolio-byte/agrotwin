@@ -12,8 +12,9 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<"light" | "dark" | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("agrotwin-theme") as "light" | "dark" | null;
-    setTheme(stored ?? (document.documentElement.getAttribute("data-theme") as "light" | "dark") ?? "light");
+    const stored = localStorage.getItem("agrotwin-theme");
+    // "system" (chosen on the landing page) shows as whatever the page resolved it to
+    setTheme(stored === "light" || stored === "dark" ? stored : ((document.documentElement.getAttribute("data-theme") as "light" | "dark") ?? "light"));
   }, []);
 
   function toggle() {

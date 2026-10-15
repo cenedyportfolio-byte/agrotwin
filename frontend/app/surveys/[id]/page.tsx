@@ -90,8 +90,9 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
   return (
     <AppShell>
       <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div>
+        {/* title and buttons side by side only with room for both (staff have five buttons) */}
+        <div className="flex flex-col @4xl:flex-row @4xl:items-start justify-between gap-4">
+          <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">{survey?.name ?? "Loading…"}</h1>
             <p className="text-muted-foreground mt-1 text-xs sm:text-sm">
               {survey?.survey_date ? new Date(survey.survey_date).toLocaleDateString() : "—"} · {frames.length} photos
@@ -102,7 +103,7 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
               )}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full @4xl:w-auto @4xl:max-w-[50%] @4xl:justify-end @6xl:max-w-none">
             {needsProcessing && hasImages && (
               <Button
                 size="sm"
@@ -220,7 +221,7 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
           <h2 className="font-semibold text-sm mb-3">
             Photos {images ? `(${frames.length})` : ""}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 @md:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6 gap-2">
             {frames.map((frame, i) => (
               <button
                 key={frame.key}

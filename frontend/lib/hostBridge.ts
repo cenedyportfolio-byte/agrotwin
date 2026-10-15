@@ -21,7 +21,26 @@ export type HostMessage =
   | { type: "SET_MODE"; mode: ViewMode }
   | { type: "FOCUS_ZONE"; zoneId: string }
   | { type: "SET_ADVANCED"; advanced: boolean }
+  /** Fly back to this mode's view of the field (the app's "Centre" button). */
+  | { type: "RESET_VIEW" }
+  /** Look straight down at a point, e.g. where a drone photo was taken. */
+  | { type: "FOCUS_POINT"; lat: number; lon: number }
+  /** The app closed its zone / target sheet: drop the highlight. */
+  | { type: "CLEAR_SELECTION" }
   | { type: "PING" };
+
+/** A tapped ground control target, for the app's own sheet (the page's panel
+ * would sit under the app's buttons). */
+export interface HostGcp {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  height_m: number | null;
+  size_m: number | null;
+  source: string;
+  rtk: boolean;
+}
 
 export type PageMessage =
   | { type: "VIEWER_READY"; surveyId?: string | null }
@@ -29,6 +48,7 @@ export type PageMessage =
   | { type: "MODE_CHANGED"; mode: ViewMode }
   | { type: "SPLAT_STATUS"; status: string; detail?: string }
   | { type: "LAYER_ERROR"; message: string }
+  | { type: "GCP_SELECTED"; gcp: HostGcp | null }
   | { type: "PONG" };
 
 interface HostWindow extends Window {
@@ -63,6 +83,9 @@ interface HostBridgeHandlers {
   onSetMode?: (mode: ViewMode) => void;
   onFocusZone?: (zoneId: string) => void;
   onSetAdvanced?: (advanced: boolean) => void;
+  onResetView?: () => void;
+  onFocusPoint?: (lat: number, lon: number) => void;
+  onClearSelection?: () => void;
 }
 
 /** Subscribes to host messages for the lifetime of the component. */
@@ -85,6 +108,15 @@ export function useHostBridge(handlers: HostBridgeHandlers): void {
           break;
         case "SET_ADVANCED":
           handlers.onSetAdvanced?.(detail.advanced);
+          break;
+        case "RESET_VIEW":
+          handlers.onResetView?.();
+          break;
+        case "FOCUS_POINT":
+          handlers.onFocusPoint?.(detail.lat, detail.lon);
+          break;
+        case "CLEAR_SELECTION":
+          handlers.onClearSelection?.();
           break;
         case "PING":
           notifyHost({ type: "PONG" });

@@ -37,7 +37,7 @@ describe("DetectionZoneCard", () => {
     await render(<DetectionZoneCard zone={zone} areaM2={320} locationLabel="North-West area" onViewOnMap={onViewOnMap} />);
     expect(screen.getByText(/Patchy vegetation/)).toBeTruthy();
     expect(screen.getByText("Medium")).toBeTruthy();
-    expect(screen.getByText("North-West area · 320 m²")).toBeTruthy();
+    expect(screen.getByText("North-West area · 0.08 acres")).toBeTruthy();
     expect(screen.getByText("Ground inspection recommended")).toBeTruthy();
     expect(screen.queryByText(/patchy_vegetation/)).toBeNull();
   });
@@ -68,7 +68,7 @@ describe("ProcessingProgress", () => {
   };
   it("lists the backend's steps and marks the current one", async () => {
     await render(<ProcessingProgress job={job} />);
-    expect(screen.getByText("Creating your digital twin")).toBeTruthy();
+    expect(screen.getByText("Making your field map")).toBeTruthy();
     // "Generating Orthomosaic" appears twice: the hero's current-step line and its own row in the step list.
     expect(screen.getAllByText("Generating Orthomosaic").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Working")).toBeTruthy();
@@ -78,6 +78,34 @@ describe("ProcessingProgress", () => {
     const onRetry = jest.fn();
     await render(<ProcessingProgress job={{ ...job, status: "FAILED", error_message: "rasterio missing" }} onRetry={onRetry} />);
     expect(screen.getByText("rasterio missing")).toBeTruthy();
-    expect(screen.getByText("Retry processing")).toBeTruthy();
+    expect(screen.getByText("Try again")).toBeTruthy();
+  });
+  it("names the detailed map, says it takes hours, and shows the note of a long step", async () => {
+    const detailed: ProcessingJob = {
+      ...job,
+      status: "PROCESSING",
+      current_step: "odm_reconstruction",
+      steps: [
+        { key: "odm_prepare", label: "Getting the photos ready", status: "complete" },
+        { key: "odm_reconstruction", label: "3D reconstruction of the field (the long part)", status: "pending", note: "matching the photos, stage 4 of 13" },
+        { key: "odm_import", label: "Drawing the detailed map", status: "pending" },
+      ],
+    };
+    await render(<ProcessingProgress job={detailed} />);
+    expect(screen.getByText("Making the detailed map")).toBeTruthy();
+    expect(screen.getByText(/Usually a few hours/)).toBeTruthy();
+    expect(screen.getAllByText("matching the photos, stage 4 of 13").length).toBeGreaterThanOrEqual(1);
+  });
+  it("says the quick map is still there when the detailed map fails", async () => {
+    const failed: ProcessingJob = {
+      ...job,
+      status: "FAILED",
+      current_step: "odm_reconstruction",
+      error_message: "Not enough overlap between the photos.",
+      steps: [{ key: "odm_prepare", label: "Getting the photos ready", status: "complete" }, { key: "odm_reconstruction", label: "3D reconstruction", status: "failed" }],
+    };
+    await render(<ProcessingProgress job={failed} />);
+    expect(screen.getByText("The detailed map could not be made")).toBeTruthy();
+    expect(screen.getByText("Not enough overlap between the photos. The quick map is still there.")).toBeTruthy();
   });
 });

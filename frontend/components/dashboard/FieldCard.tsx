@@ -20,8 +20,9 @@ export function FieldCard({ field }: { field: FieldSummary }) {
 
   return (
     <Card className="gap-4">
-      <CardHeader className="flex items-start justify-between gap-2">
-        <Link href={`/fields/${field.id}`} className="min-w-0 hover:underline">
+      {/* the badge drops below the name on a narrow card instead of squeezing it to a word per line */}
+      <CardHeader className="flex flex-wrap items-start justify-between gap-2">
+        <Link href={`/fields/${field.id}`} className="min-w-[11rem] flex-1 hover:underline">
           <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{field.crop_type}</div>
           <h3 className="font-semibold text-lg leading-tight">{field.name}</h3>
           {area && (
@@ -30,7 +31,7 @@ export function FieldCard({ field }: { field: FieldSummary }) {
             </div>
           )}
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <MethodBadge method={field.analysis_method} />
           {field.analysis_is_mock && <MockDataBadge />}
         </div>
@@ -52,13 +53,13 @@ export function FieldCard({ field }: { field: FieldSummary }) {
         )}
       </CardContent>
 
-      <CardFooter className="flex items-center justify-between text-xs">
+      <CardFooter className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <Badge variant="outline" className={STATUS_CLASS[status.kind]}>
           {status.label}
         </Badge>
         <Link
           href={`/fields/${field.id}/digital-twin`}
-          className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+          className="inline-flex items-center gap-1 whitespace-nowrap font-medium text-brand hover:underline"
         >
           Open field map <ArrowRight size={14} />
         </Link>

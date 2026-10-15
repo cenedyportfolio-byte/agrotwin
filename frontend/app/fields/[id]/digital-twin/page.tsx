@@ -120,6 +120,12 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         const state = useDigitalTwinStore.getState();
         if (state.advanced !== on) state.toggleAdvanced();
       },
+      onResetView: () => useDigitalTwinStore.getState().requestCamera({ kind: "home" }),
+      onFocusPoint: (lat: number, lon: number) => useDigitalTwinStore.getState().requestCamera({ kind: "point", lat, lon }),
+      onClearSelection: () => {
+        setSelectedDetectionId(null);
+        setSelectedGcpId(null);
+      },
     }),
     [setMode, setSelectedDetectionId]
   );
@@ -155,6 +161,23 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
   const detections = analysis?.detections ?? [];
   const selectedZone = detections.find((d) => d.id === selectedDetectionId) ?? null;
   const selectedGcp = (showGcps && gcps?.find((g) => g.id === selectedGcpId)) || null;
+  // the app shows a tapped target in its own sheet
+  useEffect(() => {
+    if (!embedded) return;
+    notifyHost({
+      type: "GCP_SELECTED",
+      gcp: selectedGcp && {
+        id: selectedGcp.id,
+        name: selectedGcp.name,
+        lat: selectedGcp.lat,
+        lon: selectedGcp.lon,
+        height_m: selectedGcp.height_m ?? null,
+        size_m: selectedGcp.size_m ?? null,
+        source: selectedGcp.source,
+        rtk: !!selectedGcp.rtk,
+      },
+    });
+  }, [embedded, selectedGcp]);
 
   // Capture geometry from the frames' own gimbal pitch: a nadir-only flight
   // (all ≈ −90°) leaves depth poorly constrained along the viewing rays, so
@@ -174,14 +197,15 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
 
   if (fieldMissing) {
     return (
-      <div className="min-h-screen bg-background px-4">
+      <div className="min-h-dvh bg-background px-4">
         <NotAvailable what="field" />
       </div>
     );
   }
 
   return (
-    <div className="relative h-screen w-full">
+    // h-dvh: the visible height (100vh is taller than the screen in Safari)
+    <div className="relative h-dvh w-full">
       <CesiumViewer
         boundary={boundary}
         centerLat={field?.center_lat ?? null}
@@ -216,15 +240,17 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
       />
 
       {/* top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-center justify-between gap-2 p-2 sm:p-4 z-30">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-center justify-between gap-2 z-30 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] sm:pb-4 sm:pt-[max(1rem,env(safe-area-inset-top))] sm:pl-[max(1rem,env(safe-area-inset-left))] sm:pr-[max(1rem,env(safe-area-inset-right))]">
         <div className="pointer-events-auto flex items-center gap-2">
           {!embedded && (
             <Link
               href={`/fields/${id}`}
+              aria-label={`Back to ${field?.name ?? "the field"}`}
               className="flex items-center gap-1.5 sm:gap-2 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium shadow-lg backdrop-blur hover:bg-surface-2"
             >
               <ArrowLeft size={15} />
-              <span className="max-w-[100px] sm:max-w-none truncate">{field?.name ?? "Field"}</span>
+              {/* just the arrow on the smallest phones, so the mode switch fits beside it (it wrapped onto the Layers button) */}
+              <span className="hidden min-[380px]:inline max-w-[100px] sm:max-w-none truncate">{field?.name ?? "Field"}</span>
             </Link>
           )}
           {!embedded && surveys && surveys.length > 1 && surveyId && (
@@ -251,8 +277,10 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         {!embedded && <CesiumToolbar />}
       </div>
 
-      {/* layer controls */}
-      <div className="pointer-events-none absolute right-2 sm:right-4 top-14 sm:top-20 z-20">
+      {/* layer controls — in the app, its own Layers sheet replaces them (here they sat under the app's title) */}
+      <div
+        className={`pointer-events-none absolute right-2 sm:right-4 top-14 sm:top-20 z-20 mt-[env(safe-area-inset-top)] mr-[env(safe-area-inset-right)] ${embedded ? "hidden" : ""}`}
+      >
         <LayerControls
           hasOrthomosaic={!!viewerAssets.orthomosaic}
           hasNdvi={!!viewerAssets.ndvi}
@@ -275,9 +303,11 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         />
       </div>
 
-      {/* detection detail panel — docked at the bottom like the GCP card */}
-      {selectedZone && (
-        <div className="pointer-events-none absolute inset-x-2 bottom-12 z-20 sm:left-auto sm:right-4 sm:bottom-16">
+      {/* detection detail panel — docked at the bottom like the GCP card. The
+          app shows zones and targets in its own sheets: these panels would sit
+          under its buttons and legend. */}
+      {selectedZone && !embedded && (
+        <div className="pointer-events-none absolute inset-x-2 bottom-12 z-20 mb-[env(safe-area-inset-bottom)] sm:left-auto sm:right-4 sm:bottom-16">
           <DetectionPanel zone={selectedZone} field={field ?? null} onClose={() => setSelectedDetectionId(null)} />
         </div>
       )}
@@ -286,14 +316,19 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
           Docked at the bottom: mid-screen on a phone it would cover the target
           just tapped, and on the right under the layer list it would cover the
           list's lower rows (much longer in Advanced View). */}
-      {selectedGcp && (
-        <div className="pointer-events-none absolute inset-x-2 bottom-12 z-20 sm:left-auto sm:right-4 sm:bottom-16">
+      {selectedGcp && !embedded && (
+        <div className="pointer-events-none absolute inset-x-2 bottom-12 z-20 mb-[env(safe-area-inset-bottom)] sm:left-auto sm:right-4 sm:bottom-16">
           <GcpPanel gcp={selectedGcp} onClose={() => setSelectedGcpId(null)} />
         </div>
       )}
 
-      {/* transient notices */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-20 sm:bottom-24 flex flex-col items-center gap-2 px-4">
+      {/* transient notices — in the app, under its title and mode bar: the
+          bottom of the screen holds its buttons and legend */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-2 px-4 ${
+          embedded ? "top-40" : "bottom-20 sm:bottom-24 mb-[env(safe-area-inset-bottom)]"
+        }`}
+      >
         {processing && job && (
           <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
             <Loader2 size={13} className="animate-spin text-attention" />
@@ -307,15 +342,22 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         )}
         {surveyId && !processing && !viewerAssets.orthomosaic && frameAnchors.length > 0 && mode === "field-map" && (
           <div className="pointer-events-auto rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur text-center">
-            No continuous field map yet — showing the survey&apos;s photo positions. Run processing or import an
-            orthomosaic from the{" "}
-            <Link href={`/surveys/${surveyId}`} className="text-brand hover:underline">
-              survey page
-            </Link>
-            .
+            {embedded ? (
+              "No field map yet — showing where the photos were taken."
+            ) : (
+              <>
+                No continuous field map yet — showing the survey&apos;s photo positions. Run processing or import an
+                orthomosaic from the{" "}
+                <Link href={`/surveys/${surveyId}`} className="text-brand hover:underline">
+                  survey page
+                </Link>
+                .
+              </>
+            )}
           </div>
         )}
-        {mode === "photorealistic" && splat.status !== "loaded" && (
+        {/* the app shows its own photorealistic status */}
+        {mode === "photorealistic" && splat.status !== "loaded" && !embedded && (
           <div className="pointer-events-auto rounded-lg border border-attention/40 bg-surface/95 px-3 sm:px-4 py-2 text-xs text-attention shadow-lg backdrop-blur text-center">
             {splat.status === "loading" && "Loading Gaussian-splat reconstruction…"}
             {splat.status === "missing" &&
@@ -324,7 +366,7 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
             {splat.status === "idle" && "Preparing…"}
           </div>
         )}
-        {mode === "photorealistic" && splat.status === "loaded" && (
+        {mode === "photorealistic" && splat.status === "loaded" && !embedded && (
           <div className="rounded-lg border border-border bg-surface/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur text-center">
             Gaussian splats reconstructed from this survey&apos;s frames (SfM + 3DGS), geo-aligned to the RTK camera positions
             {capture && capture.oblique === 0 && (
@@ -342,8 +384,12 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
-      {/* bottom status bar */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface/90 px-3 py-2 sm:px-6 sm:py-3 backdrop-blur z-30">
+      {/* bottom status bar — in the app the legend carries the shares */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface/90 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-3 sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur z-30 ${
+          embedded ? "hidden" : ""
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-[11px] sm:text-xs">
           {analysis && (
             <>

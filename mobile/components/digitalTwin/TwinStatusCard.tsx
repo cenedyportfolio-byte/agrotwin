@@ -27,7 +27,7 @@ export function TwinModeCard({ mode, ready, splat, splatAvailable, hasMesh, proc
 
   let state: { label: string; color: string; copy: string };
   if (layerError) state = { label: "Problem", color: colors.problem, copy: layerError };
-  else if (!ready) state = { label: "Loading", color: colors.accent, copy: "The 3D viewer and field imagery are streamed from your AgroTwin computer." };
+  else if (!ready) state = { label: "Loading", color: colors.accent, copy: "The 3D viewer and field imagery are streamed from the AgroTwin server." };
   else if (mode === "photorealistic") {
     const s = splat?.status ?? "idle";
     state =
@@ -36,7 +36,7 @@ export function TwinModeCard({ mode, ready, splat, splatAvailable, hasMesh, proc
         : s === "loading"
           ? { label: "Loading", color: colors.accent, copy: "Loading the photorealistic reconstruction. Best over Wi-Fi." }
           : s === "missing"
-            ? { label: "Not built", color: colors.muted, copy: "No photorealistic reconstruction exists for this survey yet — it is built on the AgroTwin computer's GPU." }
+            ? { label: "Not built", color: colors.muted, copy: "No photorealistic 3D view exists for this flight yet — it is built on the AgroTwin server." }
             : s === "error"
               ? { label: "Problem", color: colors.problem, copy: `Could not load the reconstruction: ${splat?.detail ?? "unknown error"}` }
               : { label: "Preparing", color: colors.accent, copy: "Preparing…" };

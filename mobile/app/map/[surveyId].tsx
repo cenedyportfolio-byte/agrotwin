@@ -11,15 +11,16 @@ import { enrichZones } from "@/features/analysis/zones";
 import { useMapLayerStore, type MapLayerKey } from "@/stores/mapLayerStore";
 import { useUiStore } from "@/stores/uiStore";
 import { ErrorState, IconButton, LoadingState, Screen, Swatch, AppText } from "@/components/ui";
-import { LayerSheet, MapControls, ZoneSheet, selectRasterSources } from "@/components/map";
+import { GcpSheet, LayerSheet, MapControls, ZoneSheet, selectRasterSources } from "@/components/map";
 import { DigitalTwinWebView, type DigitalTwinHandle } from "@/components/digitalTwin/DigitalTwinWebView";
 import { TwinModeSelector } from "@/components/digitalTwin/TwinModeSelector";
-import type { TwinLayer, TwinMode } from "@/components/digitalTwin/digitalTwinBridge";
+import type { TwinLayer, TwinMode, ViewerGcp } from "@/components/digitalTwin/digitalTwinBridge";
+import { formatPercent } from "@/utils/format";
 
 const LEGEND = [
-  { tier: "healthy", label: "Healthy" },
-  { tier: "attention", label: "Needs attention" },
-  { tier: "problem", label: "Problem" },
+  { tier: "healthy", label: "Healthy", share: "healthy_area_percent" },
+  { tier: "attention", label: "Needs attention", share: "attention_area_percent" },
+  { tier: "problem", label: "Problem", share: "problem_area_percent" },
 ] as const;
 
 /** The Layers sheet's keys → the web viewer's layer keys (SET_LAYER). */
@@ -58,6 +59,7 @@ export default function FieldMapScreen() {
   const [webReady, setWebReady] = useState(false);
   const [mode, setMode] = useState<TwinMode>("field-map");
   const [splatStatus, setSplatStatus] = useState<string | null>(null);
+  const [gcp, setGcp] = useState<ViewerGcp | null>(null);
 
   const changeMode = useCallback((nextMode: TwinMode) => {
     setMode(nextMode);
@@ -140,6 +142,7 @@ export default function FieldMapScreen() {
         onZoneSelected={setSelectedId}
         onModeChanged={setMode}
         onSplatStatus={(status) => setSplatStatus(status)}
+        onGcpSelected={setGcp}
         frameColor={colors.bg}
       />
 
@@ -187,7 +190,14 @@ export default function FieldMapScreen() {
         {LEGEND.map((l) => (
           <View key={l.tier} style={styles.legendRow}>
             <Swatch color={colors[l.tier]} size={10} />
-            <AppText variant="small">{l.label}</AppText>
+            <AppText variant="small" style={{ flex: 1 }}>
+              {l.label}
+            </AppText>
+            {analysis.data ? (
+              <AppText variant="small" tone="muted" tabular>
+                {formatPercent(analysis.data.analysis_summary[l.share])}
+              </AppText>
+            ) : null}
           </View>
         ))}
         {analysis.isError ? (
@@ -211,9 +221,19 @@ export default function FieldMapScreen() {
         areaM2={selected?.areaM2 ?? null}
         fieldHectares={boundary.data?.area_hectares ?? field.data?.area_hectares ?? null}
         locationLabel={selected?.locationLabel ?? null}
-        onClose={() => setSelectedId(null)}
+        onClose={() => {
+          setSelectedId(null);
+          webRef.current?.send({ type: "CLEAR_SELECTION" });
+        }}
         onViewDetails={() => surveyId && router.push({ pathname: "/analysis/[surveyId]", params: { surveyId } })}
         onOpenTwin={() => surveyId && selected && router.push({ pathname: "/twin/[surveyId]", params: { surveyId, zone: selected.zone.id } })}
+      />
+      <GcpSheet
+        gcp={gcp}
+        onClose={() => {
+          setGcp(null);
+          webRef.current?.send({ type: "CLEAR_SELECTION" });
+        }}
       />
     </View>
   );
@@ -225,6 +245,6 @@ const styles = StyleSheet.create({
   titlePill: { alignSelf: "flex-start", maxWidth: "70%", minWidth: 0, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
   modeBar: { position: "absolute", left: 14, zIndex: 10 },
   noticePill: { position: "absolute", left: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 300, zIndex: 10 },
-  legend: { position: "absolute", left: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 200 },
+  legend: { position: "absolute", left: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, width: 190 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 3 },
 });
