@@ -12,6 +12,31 @@ class UserOut(BaseModel):
     role: str
     is_active: bool = True
     created_at: datetime
+    consent_version: str | None = None  # the data agreement accepted (a hash of its text)
+    consent_at: datetime | None = None
+    consent_required: bool = False  # a farmer who must accept the current agreement first
+
+
+class AgreementOut(BaseModel):
+    """The data agreement in force (agreement_service)."""
+    version: str
+    title: str
+    text: str
+    accepted: bool  # by the signed-in user, this version
+    accepted_at: datetime | None = None
+
+
+class AgreementAccept(BaseModel):
+    version: str  # the version read: a changed agreement is read again
+
+
+class AccountDelete(BaseModel):
+    password: str
+    confirm: str  # the word DELETE, typed
+
+
+class AccountDeleteByAdmin(BaseModel):
+    confirm: str  # the account's email, typed
 
 
 class LoginRequest(BaseModel):
@@ -81,6 +106,8 @@ class FieldOut(BaseModel):
     area_hectares: float | None = None
     center_lat: float | None = None
     center_lon: float | None = None
+    boundary_source: str | None = None  # None: estimated from the photos; "flight_plan"
+    boundary_file: str | None = None
     created_at: datetime
 
 
@@ -94,6 +121,38 @@ class FieldSummary(FieldOut):
     problem_area_percent: float | None = None
     analysis_method: str | None = None
     analysis_is_mock: bool | None = None
+
+
+class BoundaryFileInfo(BaseModel):
+    """What was read from a flight-plan file (boundary_file_service)."""
+    filename: str | None = None
+    kind: str
+    area_hectares: float
+    notes: list[str] = []
+
+
+class BoundaryFileResult(BaseModel):
+    field: FieldSummary
+    kind: str | None = None
+    notes: list[str] = []
+    rechecking: int = 0  # flights whose crop health is being checked again on the new outline
+
+
+class FlightCheckItem(BaseModel):
+    key: str  # height | detail | angle | front_overlap | side_overlap | coverage | sun | gps | bands | days
+    label: str
+    status: str  # ok | warn (advice for the next flight) | info
+    value: str
+    target: str | None = None
+    message: str | None = None
+
+
+class FlightCheckOut(BaseModel):
+    """How the flight was flown, from its photos' own data (flight_check_service)."""
+    status: str  # good | check (something to fix next time) | unknown (no flight data)
+    summary: str
+    frames: int
+    items: list[FlightCheckItem]
 
 
 class SurveyCreate(BaseModel):
@@ -214,6 +273,14 @@ class AskResponseOut(BaseModel):
     context_used: dict[str, Any]
 
 
+class JobQueuePlace(BaseModel):
+    """Where a waiting job is in line (queue_service.position)."""
+    ahead: int  # jobs running or queued before it on its queue
+    wait_minutes: int | None = None  # estimate from recent jobs; None without history
+    hours: str | None = None  # "8 pm–6 am": the hours detailed maps start in
+    starts_at: str | None = None  # "8 pm": waiting for those hours
+
+
 class ProcessingJobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -225,3 +292,43 @@ class ProcessingJobOut(BaseModel):
     error_detail: str | None = None  # technical; the web app shows it to staff only
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    queued_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    queue: JobQueuePlace | None = None  # only while it waits
+
+
+class QueueJobOut(BaseModel):
+    """A job in the staff queue view (queue_service.overview)."""
+    id: str
+    survey_id: str
+    survey_name: str | None = None
+    field_id: str | None = None
+    field_name: str | None = None
+    owner: str | None = None
+    queue: str  # quick | detailed
+    kind: str  # "Field map", "Detailed map", …
+    status: str
+    step: str | None = None
+    note: str | None = None
+    photos: int = 0
+    place: int | None = None  # 1 = next to start on its queue
+    wait_minutes: int | None = None
+    queued_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_message: str | None = None
+
+
+class QueueSettingsOut(BaseModel):
+    detailed_enabled: bool
+    detailed_workers: int
+    detailed_hours: str | None = None  # "8 pm–6 am"; None: any time
+    detailed_hours_setting: str | None = None  # AGROTWIN_ODM_HOURS as written
+    detailed_open_now: bool
+
+
+class QueueOut(BaseModel):
+    jobs: list[QueueJobOut]  # running, then waiting in the order they will run
+    recent: list[QueueJobOut]  # finished in the last few days, newest first
+    settings: QueueSettingsOut

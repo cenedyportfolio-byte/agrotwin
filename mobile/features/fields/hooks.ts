@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fieldsService } from "@/services/fields";
-import type { FieldCreate } from "@/types";
+import type { LocalFile } from "@/services/surveys";
+import type { BoundaryFileResult, FieldCreate } from "@/types";
 import { queryKeys } from "../queryKeys";
 
 export function useFields() {
@@ -32,4 +33,16 @@ export function useCreateField() {
     mutationFn: (payload: FieldCreate) => fieldsService.create(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.fields }),
   });
+}
+
+/** The field's outline from a flight plan, or back to the one estimated from the photos. */
+export function useFlightPlan(fieldId: string) {
+  const qc = useQueryClient();
+  const updated = (res: BoundaryFileResult) => {
+    qc.setQueryData(queryKeys.field(fieldId), res.field);
+    qc.invalidateQueries({ queryKey: queryKeys.fields });
+  };
+  const attach = useMutation({ mutationFn: (file: LocalFile) => fieldsService.attachFlightPlan(fieldId, file), onSuccess: updated });
+  const remove = useMutation({ mutationFn: () => fieldsService.removeFlightPlan(fieldId), onSuccess: updated });
+  return { attach, remove };
 }

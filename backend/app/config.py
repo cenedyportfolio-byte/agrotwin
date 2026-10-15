@@ -92,6 +92,32 @@ class Settings(BaseSettings):
     odm_min_photos: int = 20  # fewer cannot make a map worth hours of processing
     odm_timeout_hours: float = 12.0
     odm_build_3d: bool = True  # also the 3D reality mesh and point cloud for the 3D view
+    # The detailed-map queue (app/services/queue_service.py). Each map takes most
+    # of the GPU and memory for hours: one at a time unless the server has room
+    # for more. odm_hours keeps them to quiet hours, e.g. "20-6": a map starts
+    # only between 8 pm and 6 am server time (one that is running carries on);
+    # empty, any time.
+    odm_workers: int = 1
+    odm_hours: str = ""
+
+    # Flight check after an upload (app/services/flight_check_service.py): what
+    # is flagged for the next flight. The defaults follow the flight guide
+    # (100 ft, 80 % front / 75 % side overlap, camera straight down, near
+    # midday), less a margin for measuring overlap from the photo positions.
+    # Advice only: a flagged flight is processed all the same.
+    flight_max_height_ft: float = 200.0  # higher shows too little detail
+    flight_max_gsd_cm: float = 2.0  # coarser cannot show small weeds
+    flight_min_front_overlap: float = 70.0  # %
+    flight_min_side_overlap: float = 65.0  # %
+    flight_max_tilt_deg: float = 10.0  # from straight down
+    flight_min_sun_deg: float = 30.0  # a lower sun casts long shadows
+    flight_min_coverage: float = 97.0  # % of a flight-plan outline in the photos
+
+    # The data agreement farmers accept before they use AgroTwin
+    # (app/services/agreement_service.py): a text or Markdown file. Editing the
+    # file makes it a new version, which everyone accepts again. Not set: no
+    # agreement is asked for.
+    agreement_file: Path | None = None
 
     # Optional e-mail when a map is ready (no server: no e-mail). public_url is
     # the address farmers open, for the link in the message.

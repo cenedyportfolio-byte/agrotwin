@@ -1,13 +1,15 @@
 """Accounts, managed by an admin: create farmers / operators / admins, rename,
-change role, switch off, set a new password. Accounts are switched off
-rather than deleted, so their farms and surveys stay. Operators may list the
-farmers (to give a field to one), nothing else here."""
+change role, switch off, set a new password. Switching an account off keeps
+its farms and flights; deleting it (when a farmer asks for their data to be
+removed) takes them away for good. Operators may list the farmers (to give a
+field to one), nothing else here."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import auth, models, schemas
 from app.database import get_db
+from app.services import account_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 ADMIN = [Depends(auth.require_admin)]
@@ -75,3 +77,21 @@ def update_user(user_id: str, payload: schemas.UserUpdate, admin: models.User = 
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/{user_id}/delete", dependencies=ADMIN)
+def delete_user(user_id: str, payload: schemas.AccountDeleteByAdmin, admin: models.User = Depends(auth.require_admin),
+                db: Session = Depends(get_db)):
+    """Deletes an account with all its fields, flights, maps and results
+    (account_service). The account's email, typed, confirms it."""
+    user = db.get(models.User, user_id)
+    if user is None or user.role not in models.ROLES:
+        raise HTTPException(404, "Account not found")
+    if user.id == admin.id:
+        raise HTTPException(409, "Delete your own account under Settings")
+    if auth.normalize_email(payload.confirm) != user.email:
+        raise HTTPException(422, "Type the account's email to confirm")
+    try:
+        return account_service.delete(db, user)
+    except account_service.CannotDelete as exc:
+        raise HTTPException(409, str(exc)) from exc

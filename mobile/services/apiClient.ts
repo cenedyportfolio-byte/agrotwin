@@ -1,6 +1,6 @@
 import { requestTimeoutMs, uploadTimeoutMs } from "@/constants/config";
 import { ApiError } from "./errors";
-import { getApiUrl, getAuthToken, getWebViewerUrl, notifyUnauthorized } from "./runtimeConfig";
+import { CONSENT_REQUIRED, getApiUrl, getAuthToken, getWebViewerUrl, notifyConsentRequired, notifyUnauthorized } from "./runtimeConfig";
 
 /**
  * Centralised HTTP access to the FastAPI backend. Every service goes through
@@ -130,6 +130,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (res.status === 401 && headers.Authorization) notifyUnauthorized();
   if (!res.ok) {
     const detail = await readDetail(res);
+    if (res.status === 403 && detail?.startsWith(CONSENT_REQUIRED)) notifyConsentRequired();
     throw new ApiError("http", detail ?? res.statusText ?? `Request failed (${res.status})`, {
       status: res.status,
       detail: detail ?? undefined,
@@ -204,6 +205,7 @@ export function uploadMultipart<T>(path: string, form: FormData, options: Upload
       } catch {
         detail = xhr.responseText?.slice(0, 300) || null;
       }
+      if (xhr.status === 403 && detail?.startsWith(CONSENT_REQUIRED)) notifyConsentRequired();
       reject(new ApiError("http", detail ?? `Upload failed (${xhr.status})`, { status: xhr.status, detail: detail ?? undefined, path }));
     };
     xhr.onerror = () => {

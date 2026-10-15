@@ -19,6 +19,7 @@ import { Blueprint, Button, Disclosure, ErrorState, KeyValueRow, LoadingState, S
 import { SurveyAssetList } from "@/components/surveys/SurveyAssetList";
 import { ProcessingProgress } from "@/components/processing/ProcessingProgress";
 import { GcpCard } from "@/components/gcp/GcpCard";
+import { FlightCheckCard } from "@/components/surveys/FlightCheckCard";
 import { AskAiFab } from "@/components/ai/AskAiFab";
 
 export default function SurveyDetailScreen() {
@@ -123,6 +124,8 @@ export default function SurveyDetailScreen() {
           <KeyValueRow label="Photos" value={s.frame_count && s.frame_count !== s.image_count ? `${formatNumber(s.frame_count)} (${formatNumber(s.image_count)} files with the crop-health bands)` : formatNumber(s.image_count)} />
           <KeyValueRow label="Status" value={surveyStatusLabel(s.status)} valueColor={colors[surveyStatusTier(s.status)]} last />
         </Blueprint>
+
+        <FlightCheckCard surveyId={s.id} photos={s.image_count} style={{ marginBottom: 18 }} />
 
         <View style={{ marginBottom: 18 }}>
           <GcpCard surveyId={s.id} busy={busy} />

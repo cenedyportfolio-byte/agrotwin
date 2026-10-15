@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import { authService } from "@/services/auth";
-import { setUnauthorizedHandler } from "@/services/runtimeConfig";
+import { setConsentRequiredHandler, setUnauthorizedHandler } from "@/services/runtimeConfig";
 import type { User } from "@/types";
 
 /**
@@ -19,8 +19,13 @@ interface AuthContextValue {
   /** Admin or operator: rebuilding maps, re-checking crop health and importing
    * processed files are staff tools (the server refuses them for farmers). */
   isStaff: boolean;
+  /** A farmer who must accept the data agreement (or its new version) first. */
+  needsAgreement: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  acceptAgreement: (version: string) => Promise<void>;
+  /** Deletes the account and all its data, then signs out. */
+  deleteAccount: (password: string, confirm: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,6 +55,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => setUnauthorizedHandler(() => {});
   }, [endSession]);
 
+  // the server asks for the data agreement: the fresh account says so, and the gate shows it
+  useEffect(() => {
+    setConsentRequiredHandler(() => {
+      authService.me().then(setUser).catch(() => undefined);
+    });
+    return () => setConsentRequiredHandler(() => {});
+  }, [setUser]);
+
   // refresh name / role once per start (an admin may have changed them)
   useEffect(() => {
     if (!ready || !token) return;
@@ -70,6 +83,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
     endSession();
   }, [endSession]);
 
+  const acceptAgreement = useCallback(
+    async (version: string) => {
+      setUser(await authService.acceptAgreement(version));
+      queryClient.invalidateQueries();
+    },
+    [queryClient, setUser]
+  );
+
+  const deleteAccount = useCallback(
+    async (password: string, confirm: string) => {
+      await authService.deleteAccount(password, confirm);
+      endSession();
+    },
+    [endSession]
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       ready,
@@ -77,10 +106,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user,
       userName: user?.name?.split(" ")[0] ?? null,
       isStaff: user?.role === "admin" || user?.role === "operator",
+      needsAgreement: !!token && !!user?.consent_required,
       signIn,
       signOut,
+      acceptAgreement,
+      deleteAccount,
     }),
-    [ready, token, user, signIn, signOut]
+    [ready, token, user, signIn, signOut, acceptAgreement, deleteAccount]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

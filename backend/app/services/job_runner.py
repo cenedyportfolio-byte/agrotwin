@@ -1,10 +1,13 @@
 """Background execution of processing jobs.
 
-Two worker threads inside the API process, one job at a time each:
+Two queues of worker threads inside the API process:
 - "quick": the upload pipeline (quick map, analysis), rebuilds and
-  recomputes — minutes, so a farmer's map never waits long;
+  recomputes — minutes, one at a time, so a farmer's map never waits long;
 - "detailed": OpenDroneMap runs (odm_service) — hours, so they queue behind
-  each other without holding up anyone's quick map.
+  each other without holding up anyone's quick map; AGROTWIN_ODM_WORKERS at a
+  time, and only starting within AGROTWIN_ODM_HOURS when that is set (a job
+  waits for those hours on its worker, still QUEUED). queue_service tells a
+  waiting job its place in line.
 A successful quick map queues the survey's detailed map by itself (when
 AGROTWIN_ODM_ENABLED). SQLite takes one writer at a time; WAL and the busy
 timeout make the two workers wait for each other instead of failing.
@@ -13,14 +16,16 @@ ProcessingJob row and hand over its id.
 """
 
 import logging
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.orm import Session
 
 from app import models
+from app.config import settings
 from app.database import SessionLocal
-from app.services import processing_service
+from app.services import processing_service, queue_service
 
 log = logging.getLogger(__name__)
 
@@ -28,8 +33,11 @@ Pipeline = Callable[[Session, models.ProcessingJob], None]
 
 _executors = {
     "quick": ThreadPoolExecutor(max_workers=1, thread_name_prefix="agrotwin-job"),
-    "detailed": ThreadPoolExecutor(max_workers=1, thread_name_prefix="agrotwin-odm"),
+    "detailed": ThreadPoolExecutor(max_workers=max(1, settings.odm_workers), thread_name_prefix="agrotwin-odm"),
 }
+_stopping = threading.Event()
+HOURS_CHECK_S = 60
+ENDED = ("COMPLETED", "FAILED")  # e.g. taken out of the queue by staff before its turn
 
 
 class JobAlreadyRunning(Exception):
@@ -58,15 +66,41 @@ def enqueue_detailed(db: Session, survey: models.Survey) -> models.ProcessingJob
 
 
 def submit(job_id: str, pipeline: Pipeline, queue: str = "quick") -> None:
-    _executors[queue].submit(_run, job_id, pipeline)
+    _executors[queue].submit(_run, job_id, pipeline, queue)
 
 
-def _run(job_id: str, pipeline: Pipeline) -> None:
+def stop() -> None:
+    """The API is shutting down: jobs waiting for the detailed-map hours stop
+    waiting. They are still QUEUED, so the next start queues them again."""
+    _stopping.set()
+
+
+def _still_waiting(job_id: str) -> bool:
     db = SessionLocal()
     try:
         job = db.get(models.ProcessingJob, job_id)
-        if job is None:
-            return
+        return job is not None and job.status not in ENDED
+    finally:
+        db.close()
+
+
+def _wait_for_hours(job_id: str) -> bool:
+    """Blocks until detailed maps may start. False: the job was cancelled
+    meanwhile, or the API is stopping."""
+    while not queue_service.in_hours():
+        if _stopping.wait(HOURS_CHECK_S) or not _still_waiting(job_id):
+            return False
+    return True
+
+
+def _run(job_id: str, pipeline: Pipeline, queue: str = "quick") -> None:
+    if queue == "detailed" and not _wait_for_hours(job_id):
+        return
+    db = SessionLocal()
+    try:
+        job = db.get(models.ProcessingJob, job_id)
+        if job is None or job.status in ENDED:
+            return  # cancelled while it waited
         processing_service.start(db, job)
         pipeline(db, job)
         db.commit()

@@ -1,20 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, LogOut } from "lucide-react";
+import Link from "next/link";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Loader2, LogOut, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BASEMAPS, activeBasemapId } from "@/lib/basemap";
 import { ROLE_LABEL, useMe } from "@/lib/useMe";
+import { serverDay } from "@/lib/serverTime";
 
 const TERRAIN = process.env.NEXT_PUBLIC_TERRAIN === "ellipsoid" ? "ellipsoid" : "esri";
 
 export default function SettingsPage() {
   const basemap = BASEMAPS[activeBasemapId()];
   const { me, isStaff } = useMe();
+  const { data: agreement } = useQuery({ queryKey: ["agreement"], queryFn: api.getAgreement });
   const { data: detectors } = useQuery({ queryKey: ["detectors"], queryFn: api.getDetectors, enabled: isStaff });
   const { data: knowledge } = useQuery({
     queryKey: ["knowledge-topics"],
@@ -34,6 +37,19 @@ export default function SettingsPage() {
               <Row label="Name" value={me.name ?? "—"} />
               <Row label="Email" value={me.email} />
               <Row label="Role" value={ROLE_LABEL[me.role]} />
+              {agreement && (
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground shrink-0">Data agreement</span>
+                  <span className="min-w-0 text-right">
+                    {agreement.accepted && agreement.accepted_at
+                      ? `Agreed ${serverDay(agreement.accepted_at)} · `
+                      : ""}
+                    <Link href="/agreement?next=/settings" className="text-brand hover:underline">
+                      Read it
+                    </Link>
+                  </span>
+                </div>
+              )}
             </div>
           )}
           <PasswordForm />
@@ -52,6 +68,8 @@ export default function SettingsPage() {
             Sign out
           </Button>
         </section>
+
+        <DeleteAccount />
 
         {isStaff && (
           <>
@@ -119,6 +137,78 @@ export default function SettingsPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+/** Deletes the account and all its data, after the password and DELETE typed. */
+function DeleteAccount() {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const remove = useMutation({
+    mutationFn: () => api.deleteAccount(password, confirm),
+    // a full load: nothing of the deleted account stays cached
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    onSuccess: () => window.location.assign("/"),
+  });
+  const ready = !!password && confirm.trim().toUpperCase() === "DELETE";
+
+  return (
+    <section className="rounded-xl border border-problem/30 bg-surface p-5 text-sm space-y-3">
+      <h2 className="font-semibold text-sm">Delete my account</h2>
+      <p className="text-muted-foreground">
+        Deletes your account and everything AgroTwin keeps for it: your fields and their outlines, and every
+        flight&apos;s uploaded photos, maps, 3D views and crop-health results. This cannot be undone. Photos still on
+        your drone&apos;s memory card or your computer are not touched.
+      </p>
+      {!open ? (
+        <Button variant="outline" className="text-problem hover:text-problem" onClick={() => setOpen(true)}>
+          <Trash2 /> Delete my account…
+        </Button>
+      ) : (
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ready) remove.mutate();
+          }}
+        >
+          <Input
+            type="password"
+            autoComplete="current-password"
+            placeholder="Your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="h-10 text-base"
+          />
+          <Input
+            placeholder="Type DELETE to confirm"
+            autoCapitalize="characters"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="h-10 text-base"
+          />
+          {remove.error && <p className="text-xs text-problem">{(remove.error as Error).message}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={!ready || remove.isPending} className="bg-problem text-white hover:bg-problem/90">
+              {remove.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />} Delete my account and data
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setOpen(false);
+                setPassword("");
+                setConfirm("");
+                remove.reset();
+              }}
+            >
+              Keep my account
+            </Button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 

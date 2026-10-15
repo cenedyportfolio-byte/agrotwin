@@ -59,10 +59,17 @@ map** by itself: OpenDroneMap rebuilds the field in 3D from all the photos
 in Docker (hours on CPU, less with `opendronemap/odm:gpu`), and its
 orthophoto, elevation model, 3D model, the crop-health bands aligned on its
 cameras, any ground targets and a fresh crop-health check replace the quick
-ones. A second worker runs these one at a time, so they never hold up anyone's
-quick map; an interrupted run resumes after a restart. Staff can start one
-by hand (a flight's **Detailed Map** button); without Docker the quick map
-is the result. Optional e-mail when a map is ready: `AGROTWIN_SMTP_*`.
+ones. A second worker runs these one at a time (`AGROTWIN_ODM_WORKERS` for
+more on a big server), so they never hold up anyone's quick map;
+`AGROTWIN_ODM_HOURS=20-6` starts them only between 8 pm and 6 am (one that is
+running carries on). An interrupted run resumes after a restart. Staff can
+start one by hand (a flight's **Detailed Map** button); without Docker the
+quick map is the result. Optional e-mail when a map is ready: `AGROTWIN_SMTP_*`.
+
+A waiting job shows the farmer its place in line and about how long until it
+starts (estimated from how long recent jobs took per photo). Staff see every
+job running, waiting and recently finished on the **Queue** page, and can take
+a waiting one out of the line (`queue_service`).
 
 ## Ground control points (optional)
 
@@ -88,6 +95,30 @@ The flight page lists every point with its target and the distance before
 (and after) lining up. A file whose points are kilometres from the photos is
 refused with a hint (wrong coordinate system, latitude/longitude swapped).
 
+## Field outline from the flight plan (optional)
+
+On the field's page — or with the photos, on the upload page — a farmer can
+add the mapping mission's flight plan: the KMZ that DJI Pilot 2 saves (its
+`wpmz/template.kml` holds the area drawn for the mission), or a KML/KMZ
+outline from Google Earth or farm software (`boundary_file_service`). It
+becomes the field's exact outline, used for every acre figure and health
+share, instead of the outline estimated around the photo positions; flights
+already analysed are checked again on it, and processing never redraws it.
+A waypoint route, a file far from where the photos were taken, or
+coordinates that are not latitude/longitude are refused with the reason.
+"Use the photo outline" goes back.
+
+## Flight check
+
+After an upload, the flight's page shows how it was flown, measured from the
+photos' own data (`flight_check_service`): the height and the ground detail
+it gives, the camera angle, the front and side overlap (from the spacing of
+the photos and their footprints), the sun's height, GPS/RTK, the crop-health
+bands, the days the photos are from and — with a flight-plan outline — how
+much of the field they cover. What falls short of the flight guide is
+flagged as advice for the next flight; processing goes ahead either way. The
+limits are `AGROTWIN_FLIGHT_*` (`app/config.py`).
+
 ## Accounts and sign-in
 
 Everyone signs in. Three roles:
@@ -95,8 +126,8 @@ Everyone signs in. Three roles:
 | Role | Sees | Can also |
 |---|---|---|
 | **Farmer** | only the fields of their own farm | upload flights, rename their fields, change their password |
-| **Operator** | every farm | give a field to a farmer, rebuild mosaics, recompute analyses, import processed data |
-| **Admin** | every farm | everything an operator can, plus create / switch off accounts and set new passwords (Users page) |
+| **Operator** | every farm | give a field to a farmer, rebuild mosaics, recompute analyses, import processed data, manage the processing queue |
+| **Admin** | every farm | everything an operator can, plus create / switch off / delete accounts and set new passwords (Users page) |
 
 On a new server, create the first admin once, from `backend/` (the password
 is asked for):
@@ -115,6 +146,23 @@ Sessions last 60 days (`AGROTWIN_SESSION_DAYS`). Behind https, set
 The mobile app (`mobile/`) signs in with the same accounts: it sends its
 session as a Bearer token, and hands it to the web map it embeds with a
 one-time code (`POST /api/auth/handoff` → `/auth/handoff?code=…`).
+
+**Data agreement.** With the agreement's text in a file on the server
+(plain text or simple Markdown) and `AGROTWIN_AGREEMENT_FILE` set to it, every
+farmer reads and accepts it at sign-in — on the website and in the app —
+before seeing or sending any field data, and again whenever the file
+changes (its version is a hash of the text). The Users page shows who has
+agreed to the current version. Without the file nothing is asked; staff are
+never asked.
+
+**Deleting an account.** Anyone can delete their own account with all its
+data (Settings → Delete my account, or Profile in the app: their password
+and DELETE typed); an admin can delete another account from the Users page
+(its email typed). This removes the farms, fields, flight plans and every
+flight's uploaded photos, maps, tiles, 3D models and results
+(`account_service`); photos registered in place on a drive are not touched.
+It is refused while a map is being made for one of the flights, and for the
+last admin. Switching an account off instead keeps everything.
 
 ## What you can do
 

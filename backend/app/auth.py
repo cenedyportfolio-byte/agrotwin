@@ -138,6 +138,17 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> models.User
     raise HTTPException(401, "Please sign in")
 
 
+CONSENT_REQUIRED = "Accept the data agreement first: it is shown when you sign in."
+
+
+def require_consent(user: models.User = Depends(current_user)) -> models.User:
+    """A farmer must have accepted the current data agreement (when there is one)
+    before reading or sending field data."""
+    if user.consent_required:
+        raise HTTPException(403, CONSENT_REQUIRED)
+    return user
+
+
 def require_staff(user: models.User = Depends(current_user)) -> models.User:
     if not user.is_staff:
         raise HTTPException(403, "Only AgroTwin staff can do this")

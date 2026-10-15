@@ -2,6 +2,7 @@ import { Check, Loader2, Circle, X, Clock } from "lucide-react";
 import type { ProcessingJob, ProcessingStep } from "@/lib/types";
 import { isJobActive } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { queueText } from "@/lib/queue";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Waiting for photos",
@@ -62,9 +63,10 @@ export function ProcessingProgress({
           {STATUS_LABEL[job.status] ?? job.status}
         </span>
       </div>
+      {job.status === "QUEUED" && job.queue && <p className="-mt-1 mb-2 text-xs text-muted-foreground">{queueText(job.queue)}</p>}
       <div>
         {job.steps.map((step) => (
-          <StepRow key={step.key} step={step} isCurrent={job.current_step === step.key} running={running} />
+          <StepRow key={step.key} step={step} isCurrent={job.current_step === step.key} running={running && job.status !== "QUEUED"} />
         ))}
       </div>
       {job.status === "FAILED" && (

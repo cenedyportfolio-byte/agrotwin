@@ -1,4 +1,4 @@
-import type { FieldBoundaryResponse, Survey, SurveyAvailability, SurveyCreate, SurveyImage } from "@/types";
+import type { FieldBoundaryResponse, FlightCheck, Survey, SurveyAvailability, SurveyCreate, SurveyImage } from "@/types";
 import { apiUrl, del, getJson, postJson, uploadMultipart, type UploadOptions } from "./apiClient";
 
 const base = (surveyId: string) => `/api/surveys/${encodeURIComponent(surveyId)}`;
@@ -21,6 +21,8 @@ export const surveysService = {
   listImages: (surveyId: string) => getJson<SurveyImage[]>(`${base(surveyId)}/images`),
   availability: (surveyId: string) => getJson<SurveyAvailability>(`${base(surveyId)}/availability`),
   fieldBoundary: (surveyId: string) => getJson<FieldBoundaryResponse>(`${base(surveyId)}/field-boundary`),
+  /** How the flight was flown (height, overlap, sun, …) — advice for the next flight. */
+  flightCheck: (surveyId: string) => getJson<FlightCheck>(`${base(surveyId)}/flight-check`),
 
   /** Cached JPEG thumbnail rendered by the backend. */
   thumbnailUrl: (surveyId: string, imageId: string) => apiUrl(`${base(surveyId)}/images/${encodeURIComponent(imageId)}/thumbnail`),

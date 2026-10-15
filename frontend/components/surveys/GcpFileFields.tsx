@@ -1,38 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { FileText, Loader2 } from "lucide-react";
+import { useFileCheck } from "@/lib/useFileCheck";
 import { Input } from "@/components/ui/input";
 import type { GcpFileInfo } from "@/lib/types";
 
-/** Reads the chosen file whenever it or the EPSG code changes (after a pause in
- * typing). Each answer is kept with the file and code it was for, so a stale one
- * never shows and "checking" simply means "no answer yet for these". */
+/** Reads the chosen GCP file whenever it or the EPSG code changes (useFileCheck). */
 export function useGcpFileCheck(
   file: File | null,
   epsg: string,
   read: (file: File, epsg: string) => Promise<GcpFileInfo>
 ): { info: GcpFileInfo | null; error: string | null; checking: boolean } {
-  const key = file ? `${file.name}|${file.size}|${file.lastModified}|${epsg.trim()}` : null;
-  const [answer, setAnswer] = useState<{ key: string; info: GcpFileInfo | null; error: string | null } | null>(null);
-  useEffect(() => {
-    if (!file || !key) return undefined;
-    let alive = true;
-    const t = setTimeout(() => {
-      read(file, epsg)
-        .then((info) => alive && setAnswer({ key, info, error: null }))
-        .catch((err) => alive && setAnswer({ key, info: null, error: (err as Error).message }));
-    }, 400);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-    // `read` is recreated by callers each render; the file and the code decide
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  if (!key) return { info: null, error: null, checking: false };
-  const current = answer?.key === key ? answer : null;
-  return { info: current?.info ?? null, error: current?.error ?? null, checking: current === null };
+  return useFileCheck(file, epsg.trim(), (f) => read(f, epsg));
 }
 
 const FORMAT_LABEL: Record<GcpFileInfo["format"], string> = {

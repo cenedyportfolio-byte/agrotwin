@@ -9,7 +9,7 @@ from app.database import get_db
 from app.services import analysis_service, detector_service, job_runner, llm_service, processing_service, rag_service
 
 # every route: signed in, and a {survey_id} must be on one of the user's fields
-router = APIRouter(prefix="/api/analysis", tags=["analysis"], dependencies=[Depends(auth.path_access)])
+router = APIRouter(prefix="/api/analysis", tags=["analysis"], dependencies=[Depends(auth.path_access), Depends(auth.require_consent)])
 
 
 @router.get("/detectors")

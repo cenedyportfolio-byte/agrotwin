@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Settings, Leaf } from "lucide-react";
 import clsx from "clsx";
-import { NAV_ITEMS } from "@/lib/navItems";
+import { navItemsFor } from "@/lib/navItems";
 import { useMe } from "@/lib/useMe";
 
 /** On tablets and small laptops (768–1279 px) a narrow rail — icon with a small
@@ -13,7 +13,7 @@ import { useMe } from "@/lib/useMe";
  * the top bar and bottom tabs take over. */
 export function Sidebar() {
   const pathname = usePathname();
-  const { isAdmin } = useMe();
+  const { isStaff, isAdmin } = useMe();
   const item = (active: boolean) =>
     clsx(
       "flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-center text-[11px] leading-tight transition-colors xl:flex-row xl:gap-3 xl:px-3 xl:text-left xl:text-sm",
@@ -33,7 +33,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1 xl:px-3">
-        {NAV_ITEMS.filter((it) => isAdmin || !it.adminOnly).map(({ href, label, icon: Icon }) => {
+        {navItemsFor({ isStaff, isAdmin }).map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
           return (
             <Link key={href} href={href} title={label} className={item(active)}>

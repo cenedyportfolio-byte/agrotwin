@@ -12,6 +12,8 @@ interface RuntimeConfig {
   getAuthToken: () => string | null;
   /** Called when the server answers 401 to a signed-in request (session ended). */
   onUnauthorized: () => void;
+  /** Called when the server asks for the data agreement to be accepted first. */
+  onConsentRequired: () => void;
 }
 
 const config: RuntimeConfig = {
@@ -19,6 +21,7 @@ const config: RuntimeConfig = {
   webViewerUrl: normalizeBaseUrl(env.webViewerUrl),
   getAuthToken: () => null,
   onUnauthorized: () => {},
+  onConsentRequired: () => {},
 };
 
 export function setBaseUrls(urls: { apiUrl?: string | null; webViewerUrl?: string | null }): void {
@@ -37,6 +40,18 @@ export function setUnauthorizedHandler(handler: () => void): void {
 /** A signed-in request was refused: the session expired or the account was switched off. */
 export function notifyUnauthorized(): void {
   config.onUnauthorized();
+}
+
+export function setConsentRequiredHandler(handler: () => void): void {
+  config.onConsentRequired = handler;
+}
+
+/** The backend's answer to a farmer who has not accepted the data agreement (auth.CONSENT_REQUIRED). */
+export const CONSENT_REQUIRED = "Accept the data agreement";
+
+/** A request was refused until the data agreement (or its new version) is accepted. */
+export function notifyConsentRequired(): void {
+  config.onConsentRequired();
 }
 
 export function getApiUrl(): string {

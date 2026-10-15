@@ -14,15 +14,20 @@ import { useAuth } from "@/providers/AuthProvider";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-/** Signed out: only the sign-in screen and the server address are reachable. */
+/** Signed out: only the sign-in screen and the server address are reachable.
+ * Signed in without the data agreement accepted: only the agreement. */
 function useSignInGate() {
-  const { ready, isAuthenticated } = useAuth();
+  const { ready, isAuthenticated, needsAgreement } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   useEffect(() => {
-    if (!ready || isAuthenticated) return;
-    if (segments[0] !== "login" && segments[0] !== "settings") router.replace("/login");
-  }, [ready, isAuthenticated, segments, router]);
+    if (!ready) return;
+    if (!isAuthenticated) {
+      if (segments[0] !== "login" && segments[0] !== "settings") router.replace("/login");
+    } else if (needsAgreement && segments[0] !== "agreement") {
+      router.replace("/agreement");
+    }
+  }, [ready, isAuthenticated, needsAgreement, segments, router]);
 }
 
 function RootStack() {

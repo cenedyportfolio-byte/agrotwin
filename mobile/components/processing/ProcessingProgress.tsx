@@ -7,6 +7,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { isJobActive, jobKind } from "@/services/processing";
 import type { ProcessingJob } from "@/types";
 import { formatNumber } from "@/utils/format";
+import { queueText } from "@/utils/queue";
 import { Blueprint, Button, IconBox, ProgressTrack, AppText } from "@/components/ui";
 
 function jobTitle(job: ProcessingJob): string {
@@ -31,8 +32,9 @@ function jobTitle(job: ProcessingJob): string {
   }
 }
 
-/** What to expect while it runs (the detailed map takes hours). */
+/** What to expect while it waits or runs (the detailed map takes hours). */
 function jobNote(job: ProcessingJob): string {
+  if (job.status === "QUEUED" && job.queue) return queueText(job.queue);
   if (jobKind(job) === "detailed") return "Usually a few hours. The quick map stays until then — you can use it meanwhile.";
   return "You can leave this screen — progress updates automatically.";
 }
@@ -117,7 +119,7 @@ export function ProcessingSteps({ job }: ProcessingStepsProps) {
   return (
     <View style={styles.steps}>
       {job.steps.map((step) => {
-        const running = step.key === job.current_step && active;
+        const running = step.key === job.current_step && active && job.status !== "QUEUED"; // waiting in line: not started yet
         const done = step.status === "complete";
         const failed = step.status === "failed";
         const color = done ? colors.healthy : failed ? colors.problem : running ? colors.accent : colors.muted;

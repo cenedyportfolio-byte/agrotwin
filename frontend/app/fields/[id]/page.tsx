@@ -14,6 +14,7 @@ import { useMe } from "@/lib/useMe";
 import { NotAvailable } from "@/components/layout/NotAvailable";
 import { CROP_TYPES, describeZone, flightStatusLabel, formatArea, sortSpots } from "@/lib/farm";
 import { HealthBar } from "@/components/dashboard/HealthBar";
+import { OutlineCard } from "@/components/fields/OutlineCard";
 import { SpotList } from "@/components/dashboard/SpotList";
 import type { FieldSummary } from "@/lib/types";
 
@@ -145,6 +146,8 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
         </div>
         {remove.isError && <div className="text-sm text-problem">{(remove.error as Error).message}</div>}
         {save.isError && <div className="text-sm text-problem">{(save.error as Error).message}</div>}
+
+        {field && <OutlineCard field={field} />}
 
         {field?.healthy_area_percent != null && (
           <div className="rounded-xl border border-border bg-surface p-4 sm:p-5 space-y-4">

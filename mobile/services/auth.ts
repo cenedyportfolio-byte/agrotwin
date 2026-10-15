@@ -1,4 +1,4 @@
-import type { User } from "@/types";
+import type { AccountDeleted, Agreement, User } from "@/types";
 import { getJson, postJson } from "./apiClient";
 import { getWebViewerUrl } from "./runtimeConfig";
 
@@ -10,6 +10,11 @@ export const authService = {
   me: () => getJson<User>("/api/auth/me"),
   /** A one-time code (valid a minute) that signs the embedded web viewer in. */
   handoff: () => postJson<{ code: string }>("/api/auth/handoff", {}),
+  /** The data agreement in force and whether this user accepted it; null when there is none. */
+  agreement: () => getJson<Agreement | null>("/api/auth/agreement"),
+  acceptAgreement: (version: string) => postJson<User>("/api/auth/agreement", { version }),
+  /** Deletes the signed-in account with all its fields, flights and maps (password and DELETE typed). */
+  deleteAccount: (password: string, confirm: string) => postJson<AccountDeleted>("/api/auth/delete-account", { password, confirm }),
 };
 
 /** The viewer URL, wrapped in the web app's hand-off: the WebView keeps its own

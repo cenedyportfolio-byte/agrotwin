@@ -2,15 +2,18 @@ import { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
-import { Building2, CircleHelp, Cog, Layers, LogOut, Upload, Wifi } from "lucide-react-native";
+import { useQuery } from "@tanstack/react-query";
+import { Building2, CircleHelp, Cog, FileText, Layers, LogOut, Trash2, Upload, Wifi } from "lucide-react-native";
 import { iconStroke, layout } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/providers/AuthProvider";
 import { useFields } from "@/features/fields/hooks";
+import { queryKeys } from "@/features/queryKeys";
+import { authService } from "@/services/auth";
 import { useTestConnection } from "@/features/settings/hooks";
 import { useShallow } from "zustand/react/shallow";
 import { effectiveUrls, useSettingsStore, type ThemePreference } from "@/stores/settingsStore";
-import { formatFieldArea } from "@/utils/format";
+import { formatDate, formatFieldArea } from "@/utils/format";
 import { Blueprint, CheckRow, IconBox, ListGroup, ListRow, Screen, SectionHeader, StatusBadge, AppText } from "@/components/ui";
 import { AskAiFab } from "@/components/ai/AskAiFab";
 
@@ -39,6 +42,7 @@ export default function ProfileScreen() {
   const urls = useSettingsStore(useShallow((s) => effectiveUrls(s)));
   const fields = useFields();
   const test = useTestConnection();
+  const agreement = useQuery({ queryKey: queryKeys.agreement, queryFn: authService.agreement });
 
   const farm = useMemo(() => {
     const list = fields.data ?? [];
@@ -97,7 +101,21 @@ export default function ProfileScreen() {
           <ListRow icon={<Upload size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Upload a flight" note="Photos from the drone's memory card" onPress={() => router.push("/upload")} />
           <ListRow icon={<Layers size={20} color={colors.accent} strokeWidth={iconStroke} />} label="Detail level" note={advanced ? "Advanced — methods and technical names shown" : "Simple — farmer wording"} onPress={() => router.push("/settings")} />
           <ListRow icon={<CircleHelp size={20} color={colors.accent} strokeWidth={iconStroke} />} label="How to fly your field" note="Drone settings and uploading the photos" onPress={() => router.push("/flight-guide")} />
+          {agreement.data ? (
+            <ListRow
+              icon={<FileText size={20} color={colors.accent} strokeWidth={iconStroke} />}
+              label="Data agreement"
+              note={agreement.data.accepted && agreement.data.accepted_at ? `Agreed ${formatDate(agreement.data.accepted_at)}` : agreement.data.title}
+              onPress={() => router.push("/agreement")}
+            />
+          ) : null}
           <ListRow icon={<Cog size={20} color={colors.accent} strokeWidth={iconStroke} />} label="About" note={`AgroTwin Mobile ${Constants.expoConfig?.version ?? ""}`} />
+          <ListRow
+            icon={<Trash2 size={20} color={colors.problem} strokeWidth={iconStroke} />}
+            label="Delete my account"
+            note="Your account with all its fields, flights and maps"
+            onPress={() => router.push("/delete-account")}
+          />
           <ListRow
             icon={<LogOut size={20} color={colors.accent} strokeWidth={iconStroke} />}
             label="Sign out"

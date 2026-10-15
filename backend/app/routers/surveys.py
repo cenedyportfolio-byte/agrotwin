@@ -10,18 +10,20 @@ from sqlalchemy.orm import Session
 from app import auth, models, schemas
 from app.database import get_db
 from app.services import (
+    flight_check_service,
     gcp_service,
     import_service,
     job_runner,
     multispectral_service,
     processing_service,
+    queue_service,
     storage_service,
 )
 from app.services.metadata_service import extract_image_metadata
 from app.services.survey_service import camera_fields, classify_uploaded_file
 
 # every route: signed in, and a {survey_id} must be on one of the user's fields
-router = APIRouter(prefix="/api/surveys", tags=["surveys"], dependencies=[Depends(auth.path_access)])
+router = APIRouter(prefix="/api/surveys", tags=["surveys"], dependencies=[Depends(auth.path_access), Depends(auth.require_consent)])
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".tif", ".tiff"}
 BUSY = "This survey is being processed — wait for the current job to finish"
@@ -345,10 +347,20 @@ def get_gcp_check(survey_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/{survey_id}/flight-check", response_model=schemas.FlightCheckOut)
+def get_flight_check(survey_id: str, db: Session = Depends(get_db)):
+    """How the flight was flown (height, overlap, camera angle, sun, …) and what
+    to change next time. Advice only: it never holds up processing."""
+    survey = _get_survey(db, survey_id)
+    return flight_check_service.check(list(survey.images), survey.field)
+
+
 @router.get("/{survey_id}/job", response_model=schemas.ProcessingJobOut | None)
 def get_latest_job(survey_id: str, db: Session = Depends(get_db)):
     job = processing_service.latest_job(_get_survey(db, survey_id))
-    return processing_service.job_to_dict(job) if job else None
+    if job is None:
+        return None
+    return {**processing_service.job_to_dict(job), "queue": queue_service.position(db, job)}
 
 
 @router.get("/{survey_id}", response_model=schemas.SurveyOut)

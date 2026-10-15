@@ -1,9 +1,12 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app import auth, models, schemas
 from app.config import settings
 from app.database import get_db
+from app.services import account_service, agreement_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -104,3 +107,46 @@ def change_password(payload: schemas.PasswordChange, response: Response,
     db.commit()
     _set_cookie(response, token)
     return {"changed": True, "token": token}
+
+
+@router.get("/agreement", response_model=schemas.AgreementOut | None)
+def get_agreement(user: models.User = Depends(auth.current_user)):
+    """The data agreement in force and whether this user accepted it; null when there is none."""
+    agreement = agreement_service.current()
+    if agreement is None:
+        return None
+    accepted = user.consent_version == agreement.version
+    return {"version": agreement.version, "title": agreement.title, "text": agreement.text,
+            "accepted": accepted, "accepted_at": user.consent_at if accepted else None}
+
+
+@router.post("/agreement", response_model=schemas.UserOut)
+def accept_agreement(payload: schemas.AgreementAccept, user: models.User = Depends(auth.current_user),
+                     db: Session = Depends(get_db)):
+    agreement = agreement_service.current()
+    if agreement is None:
+        raise HTTPException(404, "There is no data agreement to accept")
+    if payload.version != agreement.version:
+        raise HTTPException(409, "The agreement has just changed — read it again")
+    user.consent_version = agreement.version
+    user.consent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/delete-account")
+def delete_account(payload: schemas.AccountDelete, response: Response, user: models.User = Depends(auth.current_user),
+                   db: Session = Depends(get_db)):
+    """Deletes the signed-in user's account with all their fields, flights,
+    maps and results (account_service). Needs their password and DELETE typed."""
+    if payload.confirm.strip().upper() != "DELETE":
+        raise HTTPException(422, "Type DELETE to confirm")
+    if not auth.verify_password(payload.password, user.password_hash):
+        raise HTTPException(400, "The password is wrong")  # 401 would mean "signed out"
+    try:
+        result = account_service.delete(db, user)
+    except account_service.CannotDelete as exc:
+        raise HTTPException(409, str(exc)) from exc
+    response.delete_cookie(settings.session_cookie, path="/")
+    return result

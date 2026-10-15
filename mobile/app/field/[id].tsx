@@ -17,6 +17,7 @@ import { cropLabel, formatDate, formatFieldArea, formatNumber, relativeDay } fro
 import { sharesFromPercents } from "@/utils/health";
 import { Blueprint, Button, ErrorState, KeyValueRow, ListGroup, ListRow, LoadingState, Screen, ScreenHeader, SectionHeader, AppText } from "@/components/ui";
 import { FieldHealthSummary } from "@/components/fields/FieldHealthSummary";
+import { OutlineCard } from "@/components/fields/OutlineCard";
 import { ProcessingProgress } from "@/components/processing/ProcessingProgress";
 import { AskAiFab } from "@/components/ai/AskAiFab";
 import { authHeaders } from "@/services/apiClient";
@@ -117,6 +118,10 @@ export default function FieldDetailScreen() {
         <View style={styles.actions}>
           <Button label="View field map" size="lg" onPress={() => go("/map/[surveyId]")} disabled={!latest} fullWidth />
           <Button label="View crop health" variant="secondary" size="lg" onPress={() => go("/analysis/[surveyId]")} disabled={!latest || !analysis.data} fullWidth />
+        </View>
+
+        <View style={{ marginBottom: 18 }}>
+          <OutlineCard field={f} />
         </View>
 
         <SectionHeader title="More for this field" />

@@ -82,3 +82,12 @@ export function useDeleteSurvey() {
     },
   });
 }
+
+/** The flight check. The photo count is in the key: a check made while photos were still arriving is redone. */
+export function useFlightCheck(surveyId: string | null | undefined, photos: number) {
+  return useQuery({
+    queryKey: queryKeys.flightCheck(surveyId ?? "", photos),
+    queryFn: () => surveysService.flightCheck(surveyId as string),
+    enabled: !!surveyId && photos > 0,
+  });
+}

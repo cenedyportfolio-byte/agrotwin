@@ -63,3 +63,19 @@ export async function pickGcpFile(): Promise<LocalFile | null> {
   if (!GCP_SUFFIXES.test(a.name)) throw new Error("Choose a .csv or .txt file — the points file from your GPS, or gcp_list.txt.");
   return { uri: a.uri, name: a.name, type: a.mimeType ?? "text/plain" };
 }
+
+const FLIGHT_PLAN_SUFFIXES = /\.(kmz|kml)$/i;
+
+/** Picks the mapping mission's flight plan (DJI Pilot 2 KMZ) or a KML/KMZ outline of the field. */
+export async function pickFlightPlanFile(): Promise<LocalFile | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    // phones rarely know the KMZ/KML types: they show up as zip, XML or unknown binary
+    type: ["application/vnd.google-earth.kmz", "application/vnd.google-earth.kml+xml", "application/zip", "application/xml", "text/xml", "application/octet-stream", "*/*"],
+    multiple: false,
+    copyToCacheDirectory: true,
+  });
+  if (result.canceled || !result.assets[0]) return null;
+  const a = result.assets[0];
+  if (!FLIGHT_PLAN_SUFFIXES.test(a.name)) throw new Error("Choose a .kmz or .kml file — the mapping mission's flight plan.");
+  return { uri: a.uri, name: a.name, type: a.mimeType ?? "application/octet-stream" };
+}

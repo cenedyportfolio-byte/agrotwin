@@ -1,6 +1,6 @@
 import { apiUrl, getJson, publicAssetUrl, webUrl } from "@/services/apiClient";
 import { ApiError } from "@/services/errors";
-import { setBaseUrls } from "@/services/runtimeConfig";
+import { setBaseUrls, setConsentRequiredHandler } from "@/services/runtimeConfig";
 
 const okJson = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
@@ -30,6 +30,18 @@ describe("apiClient", () => {
   it("normalises FastAPI errors into ApiError with the detail message", async () => {
     fetchMock.mockImplementation(() => okJson({ detail: "Survey not found" }, 404));
     await expect(getJson("/api/surveys/nope")).rejects.toMatchObject({ kind: "http", status: 404, detail: "Survey not found" });
+  });
+
+  it("asks for the data agreement when the server refuses until it is accepted", async () => {
+    const asked = jest.fn();
+    setConsentRequiredHandler(asked);
+    fetchMock.mockImplementation(() => okJson({ detail: "Survey not found" }, 403));
+    await expect(getJson("/api/fields")).rejects.toMatchObject({ status: 403 });
+    expect(asked).not.toHaveBeenCalled(); // another refusal is only an error
+    fetchMock.mockImplementation(() => okJson({ detail: "Accept the data agreement first: it is shown when you sign in." }, 403));
+    await expect(getJson("/api/fields")).rejects.toMatchObject({ status: 403 });
+    expect(asked).toHaveBeenCalledTimes(1);
+    setConsentRequiredHandler(() => {});
   });
 
   it("reports an unreachable server as offline", async () => {

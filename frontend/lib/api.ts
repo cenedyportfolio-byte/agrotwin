@@ -1,14 +1,20 @@
 import type {
+  AccountDeleted,
+  Agreement,
   AnalysisResult,
   AskResponse,
+  BoundaryFileInfo,
+  BoundaryFileResult,
   DetectorStatus,
   FieldBoundaryResponse,
   FieldOut,
   FieldSummary,
+  FlightCheck,
   GcpCheck,
   GcpFileInfo,
   GroundControlPoint,
   ProcessingJob,
+  QueueOverview,
   Survey,
   SurveyAsset,
   SurveyAvailability,
@@ -28,6 +34,17 @@ function toSignIn(path: string) {
   // a full load on purpose: nothing cached for the old session survives
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination
   window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+}
+
+/** The backend's answer to a farmer who has not accepted the data agreement (auth.CONSENT_REQUIRED). */
+const CONSENT_REQUIRED = "Accept the data agreement";
+
+/** The data agreement changed (or was never accepted): read and accept it, then back here. */
+function toAgreement() {
+  if (typeof window === "undefined" || window.location.pathname === "/agreement") return;
+  const next = window.location.pathname + window.location.search;
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign(`/agreement?next=${encodeURIComponent(next)}`);
 }
 
 /** An error answer from the backend, with its HTTP status (a network failure is a plain Error). */
@@ -50,6 +67,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // response body wasn't JSON
     }
+    if (res.status === 403 && detail.startsWith(CONSENT_REQUIRED)) toAgreement();
     throw new ApiError(detail || `Request failed (${res.status})`, res.status);
   }
   if (res.status === 204) return undefined as T;
@@ -85,6 +103,13 @@ export const api = {
       current_password: currentPassword,
       new_password: newPassword,
     }),
+  /** The data agreement in force and whether this user accepted it; null when there is none. */
+  getAgreement: () => request<Agreement | null>("/api/auth/agreement"),
+  acceptAgreement: (version: string) => postJson<User>("/api/auth/agreement", { version }),
+  /** Deletes the signed-in user's account with all their fields, flights and maps. */
+  deleteAccount: (password: string, confirm: string) => postJson<AccountDeleted>("/api/auth/delete-account", { password, confirm }),
+  /** Admin: deletes an account with all its data; `confirm` is the account's email, typed. */
+  deleteUser: (userId: string, confirm: string) => postJson<AccountDeleted>(`/api/users/${userId}/delete`, { confirm }),
   listUsers: () => request<User[]>("/api/users"),
   listFarmers: () => request<User[]>("/api/users/farmers"),
   createUser: (user: { email: string; name?: string; role: UserRole; password: string }) =>
@@ -108,6 +133,22 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   listFieldSurveys: (fieldId: string) => request<Survey[]>(`/api/fields/${fieldId}/surveys`),
+  /** Reads a flight-plan file (KMZ/KML) without attaching it; `fieldId` compares it with that field. */
+  checkBoundaryFile: (file: File, fieldId?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (fieldId) form.append("field_id", fieldId);
+    return request<BoundaryFileInfo>("/api/fields/boundary-file/check", { method: "POST", body: form });
+  },
+  /** The field's outline from the flight plan; the field's finished flights are checked again on it. */
+  attachBoundaryFile: (fieldId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<BoundaryFileResult>(`/api/fields/${fieldId}/boundary-file`, { method: "POST", body: form });
+  },
+  /** Back to the outline estimated around the photos. */
+  removeBoundaryFile: (fieldId: string) =>
+    request<BoundaryFileResult>(`/api/fields/${fieldId}/boundary-file`, { method: "DELETE" }),
 
   listSurveys: () => request<Survey[]>("/api/surveys"),
   getSurvey: (surveyId: string) => request<Survey>(`/api/surveys/${surveyId}`),
@@ -155,6 +196,12 @@ export const api = {
   deleteGcpFile: (surveyId: string) =>
     request<{ deleted: boolean; queued: boolean }>(`/api/surveys/${surveyId}/gcp-file`, { method: "DELETE" }),
   getGcpCheck: (surveyId: string) => request<GcpCheck>(`/api/surveys/${surveyId}/gcp-check`),
+  getFlightCheck: (surveyId: string) => request<FlightCheck>(`/api/surveys/${surveyId}/flight-check`),
+
+  /** Staff: every processing job running or waiting, recent ones, the queue settings. */
+  getQueue: () => request<QueueOverview>("/api/queue"),
+  /** Staff: take a job out of the queue before it starts. */
+  cancelQueuedJob: (jobId: string) => request<ProcessingJob>(`/api/queue/${jobId}/cancel`, { method: "POST" }),
   recomputeAnalysis: (surveyId: string) => postJson<ProcessingJob>(`/api/analysis/${surveyId}/recompute`, undefined),
   getJob: (surveyId: string) => request<ProcessingJob | null>(`/api/surveys/${surveyId}/job`),
 

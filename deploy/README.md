@@ -130,13 +130,19 @@ Then open `https://YOUR.DNS.NAME`, sign in, and create the farmers' accounts
 on the **Users** page. Each farmer gets an e-mail address and a temporary
 password to change under Settings.
 
+If farmers are to accept a data agreement, put its text in
+`/etc/agrotwin/agreement.md` (readable by the agrotwin user), set
+`AGROTWIN_AGREEMENT_FILE=/etc/agrotwin/agreement.md` and restart the API:
+each farmer then reads and accepts it at their next sign-in, and again
+whenever the file changes. The Users page shows who has agreed.
+
 ## Day to day
 
 | | |
 |---|---|
 | Logs | `journalctl -u agrotwin-api -f`, `journalctl -u agrotwin-web -f` |
 | A detailed map's OpenDroneMap output | `/srv/agrotwin/data/surveys/<flight id>/odm/agrotwin_odm.log` |
-| Running jobs | a flight's page shows its progress; staff also see why a job failed |
+| Running jobs | the **Queue** page (staff) lists every map being made and waiting, and can take a waiting one out of the line; a flight's page shows its progress and place in line |
 | Database backup | nightly at 02:30 to `/srv/agrotwin/backups` (14 days kept); back up `/srv/agrotwin/data` with the university's file backup |
 | Restart | `sudo systemctl restart agrotwin-api agrotwin-web` — a quick map in progress is marked failed (the farmer presses Try again); a detailed map resumes by itself |
 

@@ -20,6 +20,10 @@ export interface FieldOut {
   area_hectares: number | null;
   center_lat: number | null;
   center_lon: number | null;
+  /** Where the outline comes from: null, estimated around the photos; "flight_plan", the area drawn for the flight. */
+  boundary_source: "flight_plan" | null;
+  /** The flight-plan file's name. */
+  boundary_file: string | null;
   created_at: string;
 }
 
@@ -32,6 +36,28 @@ export interface User {
   role: "admin" | "operator" | "farmer";
   is_active: boolean;
   created_at: string;
+  /** The data agreement accepted (a hash of its text) and when. */
+  consent_version?: string | null;
+  consent_at?: string | null;
+  /** A farmer who must accept the current data agreement before anything else. */
+  consent_required?: boolean;
+}
+
+/** The data agreement in force (GET /api/auth/agreement; null when there is none). */
+export interface Agreement {
+  version: string;
+  title: string;
+  text: string;
+  /** By the signed-in user, this version. */
+  accepted: boolean;
+  accepted_at: string | null;
+}
+
+/** What deleting an account removed. */
+export interface AccountDeleted {
+  deleted: boolean;
+  fields: number;
+  flights: number;
 }
 
 export interface FieldSummary extends FieldOut {
@@ -42,6 +68,15 @@ export interface FieldSummary extends FieldOut {
   problem_area_percent: number | null;
   analysis_method: AnalysisMethod | null;
   analysis_is_mock: boolean | null;
+}
+
+/** A field outline set from (or taken back from) a flight-plan file (POST/DELETE /api/fields/{id}/boundary-file). */
+export interface BoundaryFileResult {
+  field: FieldSummary;
+  kind: string | null;
+  notes: string[];
+  /** Flights whose crop health is being checked again on the new outline. */
+  rechecking: number;
 }
 
 export type SurveyStatus =
@@ -194,6 +229,41 @@ export interface ProcessingJob {
   error_message: string | null;
   created_at: string | null;
   updated_at: string | null;
+  queued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  /** Where it is in line, while it waits (GET /api/surveys/{id}/job only). */
+  queue?: JobQueuePlace | null;
+}
+
+/** Where a waiting job is in line (backend queue_service.position). */
+export interface JobQueuePlace {
+  /** Jobs running or waiting before it. */
+  ahead: number;
+  /** Estimated from recent jobs; null without history. */
+  wait_minutes: number | null;
+  /** "8 pm–6 am": the hours detailed maps start in. */
+  hours: string | null;
+  /** "8 pm": waiting for those hours. */
+  starts_at: string | null;
+}
+
+/** One line of the flight check: what was measured from the photos and, when it should change, what to do next time. */
+export interface FlightCheckItem {
+  key: "height" | "detail" | "angle" | "front_overlap" | "side_overlap" | "coverage" | "sun" | "gps" | "bands" | "days";
+  label: string;
+  status: "ok" | "warn" | "info";
+  value: string;
+  target: string | null;
+  message: string | null;
+}
+
+/** How the flight was flown, from its photos' own data (GET /api/surveys/{id}/flight-check). Advice only. */
+export interface FlightCheck {
+  status: "good" | "check" | "unknown";
+  summary: string;
+  frames: number;
+  items: FlightCheckItem[];
 }
 
 /** What was read from a ground control points file (backend gcp_file_service). */

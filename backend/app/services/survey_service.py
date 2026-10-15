@@ -264,7 +264,10 @@ def update_field_boundary_from_images(
     db: Session, field: models.Field, images: list[models.SurveyImage], gcps: list[models.GroundControlPoint] = ()
 ) -> None:
     """Field outline = convex hull of the camera positions, widened to take in
-    the survey's ground control targets (with GCP_MARGIN_M) when it has any."""
+    the survey's ground control targets (with GCP_MARGIN_M) when it has any.
+    An outline from the flight plan is the real field: it is left as it is."""
+    if field.boundary_source == "flight_plan":
+        return
     points = [(img.lon, img.lat) for img in images if img.lat is not None and img.lon is not None]
     if not points:
         return

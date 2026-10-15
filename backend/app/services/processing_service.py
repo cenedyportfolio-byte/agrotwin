@@ -81,6 +81,11 @@ STEP_STATUS = {
 WORKER_STATUSES = {"QUEUED", "PROCESSING", "GENERATING_ORTHOMOSAIC", "GENERATING_ANALYSIS"}
 
 
+def utcnow() -> datetime:
+    """Now, in UTC without a time zone — as times come back from the database."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def create_job(db: Session, survey: models.Survey, steps: list[str] = STEPS) -> models.ProcessingJob:
     job = models.ProcessingJob(
         survey_id=survey.id,
@@ -109,6 +114,11 @@ def is_detailed(job: models.ProcessingJob) -> bool:
     return [s["key"] for s in json.loads(job.steps_json or "[]")] == DETAILED_STEPS
 
 
+def queue_name(job: models.ProcessingJob) -> str:
+    """The job_runner queue it runs on: "detailed" (OpenDroneMap, hours) or "quick"."""
+    return "detailed" if is_detailed(job) else "quick"
+
+
 def set_step_note(db: Session, job: models.ProcessingJob, step_key: str, note: str) -> None:
     """A line of progress under a long step ("matching the photos, stage 4 of 13")."""
     steps = json.loads(job.steps_json or "[]")
@@ -122,12 +132,15 @@ def set_step_note(db: Session, job: models.ProcessingJob, step_key: str, note: s
 def queue(db: Session, job: models.ProcessingJob) -> None:
     job.status = "QUEUED"
     job.error_message = None
+    job.queued_at = utcnow()
+    job.started_at = job.finished_at = None
     db.flush()
 
 
 def start(db: Session, job: models.ProcessingJob) -> None:
     step = job.current_step
     job.status = STEP_STATUS.get(step, "PROCESSING") if step and step != "images_uploaded" else "PROCESSING"
+    job.started_at = utcnow()
     db.commit()
 
 
@@ -141,6 +154,8 @@ def mark_step_complete(db: Session, job: models.ProcessingJob, step_key: str) ->
     job.current_step = next_step
     job.status = "COMPLETED" if next_step is None else STEP_STATUS.get(next_step, "PROCESSING")
     job.steps_json = json.dumps(steps)
+    if next_step is None:
+        job.finished_at = utcnow()
     db.flush()
 
 
@@ -153,6 +168,7 @@ def mark_failed(db: Session, job: models.ProcessingJob, error: str, detail: str 
     job.status = "FAILED"
     job.error_message = error[:2000]
     job.error_detail = detail[:4000] if detail else None
+    job.finished_at = utcnow()
     db.flush()
 
 
@@ -167,6 +183,9 @@ def job_to_dict(job: models.ProcessingJob) -> dict:
         "error_detail": job.error_detail,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
+        "queued_at": job.queued_at,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
     }
 
 

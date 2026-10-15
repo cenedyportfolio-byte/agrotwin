@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Plane, UploadCloud } from "lucide-react";
+import { Check, FolderOpen, Loader2, Map as MapIcon, Plane, UploadCloud } from "lucide-react";
 import { api, ApiError, UPLOAD_BATCH_SIZE } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CROP_TYPES } from "@/lib/farm";
+import { CROP_TYPES, formatArea } from "@/lib/farm";
+import { useFileCheck } from "@/lib/useFileCheck";
 import { useMe } from "@/lib/useMe";
 import type { SurveyImage } from "@/lib/types";
 import { GcpFileFields, useGcpFileCheck } from "@/components/surveys/GcpFileFields";
@@ -37,6 +38,50 @@ function formatSize(bytes: number): string {
   return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
 }
 
+const PHOTO_RE = /\.(jpe?g|tiff?)$/i;
+const DJI_DAY_RE = /^DJI_(\d{4})(\d{2})(\d{2})\d{6}_/i;
+
+/** One folder of a chosen directory and the flight photos in it. */
+interface FolderGroup {
+  key: string;
+  label: string;
+  /** The day most of its photos were taken (DJI file names), "2026-06-03". */
+  day: string | null;
+  files: File[];
+}
+
+/** The photos in a chosen folder and its subfolders, grouped by the folder they
+ * are in: DJI starts a new folder with every battery, and a memory card often
+ * holds flights from several days. Everything else (logs, timestamps) is skipped. */
+function groupFolder(list: File[]): { groups: FolderGroup[]; skipped: number } {
+  const byFolder = new Map<string, File[]>();
+  let skipped = 0;
+  for (const f of list) {
+    if (!PHOTO_RE.test(f.name)) {
+      skipped += 1;
+      continue;
+    }
+    const path = f.webkitRelativePath || f.name;
+    const key = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const group = byFolder.get(key);
+    if (group) group.push(f);
+    else byFolder.set(key, [f]);
+  }
+  const groups = [...byFolder.entries()].map(([key, files]) => {
+    const count = new Map<string, number>();
+    for (const f of files) {
+      const m = DJI_DAY_RE.exec(f.name);
+      if (m) count.set(`${m[1]}-${m[2]}-${m[3]}`, (count.get(`${m[1]}-${m[2]}-${m[3]}`) ?? 0) + 1);
+    }
+    const day = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    return { key, label: key.split("/").pop() || "the chosen folder", day, files };
+  });
+  groups.sort((a, b) => (a.day ?? "").localeCompare(b.day ?? "") || a.key.localeCompare(b.key));
+  return { groups, skipped };
+}
+
+const dayLabel = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+
 type Phase = { kind: "idle" } | { kind: "uploading"; done: number; retry?: number } | { kind: "starting" } | { kind: "error"; message: string };
 
 export default function UploadPage() {
@@ -52,7 +97,13 @@ export default function UploadPage() {
   const [ownerId, setOwnerId] = useState("");
   const [flightName, setFlightName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  // or a whole folder (the memory card's DCIM), with its subfolders to tick
+  const [folder, setFolder] = useState<{ groups: FolderGroup[]; skipped: number } | null>(null);
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  // optional: the flight plan — the area drawn for the mission, the exact field outline
+  const [showPlan, setShowPlan] = useState(false);
+  const [planFile, setPlanFile] = useState<File | null>(null);
   // optional: the surveyed positions of the targets laid out for this flight
   const [showGcp, setShowGcp] = useState(false);
   const [gcpFile, setGcpFile] = useState<File | null>(null);
@@ -62,7 +113,19 @@ export default function UploadPage() {
   // the farmer's (only) field is the usual choice; a new field only when there is none
   const fieldId = fieldChoice ?? (fields && fields.length > 0 ? fields[0].id : "__new__");
   const busy = phase.kind === "uploading" || phase.kind === "starting";
-  const totalBytes = files.reduce((n, f) => n + f.size, 0);
+  const photos = folder ? folder.groups.filter((g) => ticked.has(g.key)).flatMap((g) => g.files) : files;
+  const totalBytes = photos.reduce((n, f) => n + f.size, 0);
+  const folderDays = folder ? [...new Set(folder.groups.map((g) => g.day).filter((d): d is string => !!d))] : [];
+
+  const pickFolder = (list: FileList | null) => {
+    const result = groupFolder(Array.from(list ?? []));
+    const days = [...new Set(result.groups.map((g) => g.day).filter(Boolean))].sort();
+    // photos from several days: most likely several flights — the newest is ticked
+    const newest = days.at(-1);
+    setTicked(new Set(result.groups.filter((g) => days.length <= 1 || g.day === newest).map((g) => g.key)));
+    setFolder(result);
+    setFiles([]);
+  };
 
   // leaving the page stops the upload: say so, and keep a phone's screen on meanwhile
   useEffect(() => {
@@ -81,11 +144,14 @@ export default function UploadPage() {
   const gcp = useGcpFileCheck(gcpFile, gcpEpsg, (file, epsg) =>
     api.checkGcpFile(file, { epsg, fieldId: fieldId !== "__new__" ? fieldId : undefined })
   );
+  const plan = useFileCheck(planFile, fieldId, (file) => api.checkBoundaryFile(file, fieldId !== "__new__" ? fieldId : undefined));
 
   const start = async () => {
-    if (!files.length) return setPhase({ kind: "error", message: "Choose the photos of the flight first." });
+    if (!photos.length) return setPhase({ kind: "error", message: "Choose the photos of the flight first." });
     if (gcpFile && (gcp.error || gcp.checking))
       return setPhase({ kind: "error", message: "Fix or remove the ground control points file first." });
+    if (planFile && (plan.error || plan.checking))
+      return setPhase({ kind: "error", message: "Fix or remove the flight plan first." });
     try {
       let targetFieldId = fieldId;
       if (fieldId === "__new__") {
@@ -103,11 +169,11 @@ export default function UploadPage() {
       // and let an interrupted upload resume (already-received files are skipped)
       setPhase({ kind: "uploading", done: 0 });
       const received: SurveyImage[] = [];
-      for (let i = 0; i < files.length; i += UPLOAD_BATCH_SIZE) {
-        const batch = files.slice(i, i + UPLOAD_BATCH_SIZE);
+      for (let i = 0; i < photos.length; i += UPLOAD_BATCH_SIZE) {
+        const batch = photos.slice(i, i + UPLOAD_BATCH_SIZE);
         const done = i;
         received.push(...(await sendBatch(survey.id, batch, (n) => setPhase({ kind: "uploading", done, retry: n }))));
-        setPhase({ kind: "uploading", done: Math.min(files.length, i + batch.length) });
+        setPhase({ kind: "uploading", done: Math.min(photos.length, i + batch.length) });
       }
       qc.invalidateQueries({ queryKey: ["fields"] });
       qc.invalidateQueries({ queryKey: ["surveys"] });
@@ -119,6 +185,14 @@ export default function UploadPage() {
             "These photos have no GPS position, so they cannot be placed on a map. Use the original files from the drone's memory card — copies from a phone gallery or a messaging app often lose it.",
         });
       }
+      // the outline first: processing then measures the field inside it (and
+      // leaves it as it is); if it cannot be used, the flight page says why
+      let outlineProblem = "";
+      if (planFile) {
+        await api
+          .attachBoundaryFile(targetFieldId, planFile)
+          .catch((err) => (outlineProblem = (err as Error).message));
+      }
       // attached before processing starts, so the detailed map is lined up with it;
       // if it cannot be (e.g. points far from the photos) the flight page says why
       let gcpProblem = "";
@@ -129,13 +203,16 @@ export default function UploadPage() {
       }
       setPhase({ kind: "starting" });
       await api.triggerProcessing(survey.id);
-      router.push(`/surveys/${survey.id}${gcpProblem ? `?gcp_error=${encodeURIComponent(gcpProblem)}` : ""}`);
+      const problems = new URLSearchParams();
+      if (gcpProblem) problems.set("gcp_error", gcpProblem);
+      if (outlineProblem) problems.set("outline_error", outlineProblem);
+      router.push(`/surveys/${survey.id}${problems.size ? `?${problems}` : ""}`);
     } catch (err) {
       setPhase({ kind: "error", message: (err as Error).message });
     }
   };
 
-  const pct = files.length && phase.kind === "uploading" ? Math.round((100 * phase.done) / files.length) : 0;
+  const pct = photos.length && phase.kind === "uploading" ? Math.round((100 * phase.done) / photos.length) : 0;
 
   return (
     <AppShell>
@@ -235,9 +312,9 @@ export default function UploadPage() {
             <label className="text-sm font-medium">Photos</label>
             <label className="mt-1 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface-2 px-4 py-8 text-center text-sm text-muted-foreground hover:border-brand/50">
               <UploadCloud size={24} />
-              {files.length ? (
+              {photos.length ? (
                 <span className="font-medium text-foreground">
-                  {files.length} photos · {formatSize(totalBytes)}
+                  {photos.length} photos · {formatSize(totalBytes)}
                 </span>
               ) : (
                 "Tap to choose the flight's photos (JPG and TIF)"
@@ -248,9 +325,69 @@ export default function UploadPage() {
                 multiple
                 disabled={busy}
                 className="hidden"
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                onChange={(e) => {
+                  setFolder(null);
+                  setFiles(Array.from(e.target.files ?? []));
+                }}
               />
             </label>
+            <label
+              className={`mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-brand ${busy ? "opacity-50" : "cursor-pointer hover:underline"}`}
+            >
+              <FolderOpen size={15} /> Or choose the whole folder from the memory card
+              <input
+                type="file"
+                multiple
+                disabled={busy}
+                className="hidden"
+                // a folder picker: React has no prop for it, so it is set on the element
+                ref={(el) => el?.setAttribute("webkitdirectory", "")}
+                onChange={(e) => pickFolder(e.target.files)}
+              />
+            </label>
+            {folder && (
+              <div className="mt-2 space-y-2 rounded-lg border border-border bg-surface-2 p-3 text-sm">
+                <div className="text-xs text-muted-foreground">
+                  {folder.groups.reduce((n, g) => n + g.files.length, 0)} photos in{" "}
+                  {folder.groups.length === 1 ? "the folder" : `${folder.groups.length} folders`}
+                  {folder.skipped > 0 && ` · ${folder.skipped} other files skipped (not photos)`}
+                </div>
+                {folder.groups.length === 0 && <div className="text-problem">No drone photos (JPG or TIF) in this folder.</div>}
+                {folder.groups.length > 1 && (
+                  <>
+                    <div className="text-xs">
+                      {folderDays.length > 1
+                        ? "These photos are from more than one day — probably more than one flight. Only the newest day is ticked; tick the folders of this flight."
+                        : "DJI starts a new folder with each battery. All folders of this flight are ticked."}
+                    </div>
+                    {folder.groups.map((g) => (
+                      <label key={g.key} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={ticked.has(g.key)}
+                          disabled={busy}
+                          onChange={(e) =>
+                            setTicked((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(g.key);
+                              else next.delete(g.key);
+                              return next;
+                            })
+                          }
+                          className="h-4 w-4 accent-brand"
+                        />
+                        <span className="min-w-0 truncate">
+                          {g.label}
+                          <span className="text-muted-foreground">
+                            {g.day ? ` · ${dayLabel(g.day)}` : ""} · {g.files.length} photos
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
             <p className="mt-1.5 text-xs text-muted-foreground">
               On a phone, choose them in the Files app from the memory card, not from the photo gallery. Use Wi-Fi for a
               big flight, and keep this page open until it says done.
@@ -292,12 +429,73 @@ export default function UploadPage() {
             )}
           </div>
 
+          <div>
+            {showPlan || planFile ? (
+              <>
+                <label className="text-sm font-medium">
+                  Flight plan <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+                  The area drawn for the mapping mission: the KMZ from DJI Pilot 2, or a KML/KMZ outline of the field. It
+                  becomes the exact field outline; without it the outline is estimated from where the photos were taken.
+                </p>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border bg-surface-2 px-3 py-3 text-sm text-muted-foreground hover:border-brand/50">
+                  <MapIcon size={18} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {planFile ? <span className="font-medium text-foreground">{planFile.name}</span> : "Choose the flight plan (KMZ or KML)"}
+                  </span>
+                  {planFile && !busy && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPlanFile(null);
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <input
+                    type="file"
+                    accept=".kmz,.kml,application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml"
+                    disabled={busy}
+                    className="hidden"
+                    onChange={(e) => setPlanFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {plan.checking && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 size={13} className="animate-spin" /> Reading the flight plan…
+                  </div>
+                )}
+                {plan.error && <div className="mt-2 text-sm text-problem">{plan.error}</div>}
+                {plan.info && !plan.error && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-healthy">Outline read</span> ({plan.info.kind}):{" "}
+                    {formatArea(plan.info.area_hectares)}
+                    {plan.info.notes.length > 0 && ` · ${plan.info.notes.join(" ")}`}
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowPlan(true)}
+                disabled={busy}
+                className="text-sm font-medium text-brand hover:underline"
+              >
+                + Add the flight plan (KMZ, optional)
+              </button>
+            )}
+          </div>
+
           <Button size="lg" className="h-11 w-full text-base" onClick={start} disabled={busy}>
             {busy ? <Loader2 className="animate-spin" /> : <Check />}
             {phase.kind === "uploading"
               ? phase.retry
                 ? `Connection lost — trying again (${phase.retry})…`
-                : `Uploading ${phase.done} of ${files.length} (${pct}%)…`
+                : `Uploading ${phase.done} of ${photos.length} (${pct}%)…`
               : phase.kind === "starting"
                 ? "Starting the map…"
                 : "Upload"}

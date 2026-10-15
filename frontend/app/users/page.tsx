@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, UserPlus } from "lucide-react";
+import { FileText, KeyRound, Loader2, Trash2, UserPlus } from "lucide-react";
 import { api } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ROLE_LABEL, useMe } from "@/lib/useMe";
-import type { User, UserRole } from "@/lib/types";
+import { serverDay } from "@/lib/serverTime";
+import type { Agreement, User, UserRole } from "@/lib/types";
 
 const ROLES: UserRole[] = ["farmer", "operator", "admin"];
 const ROLE_HINT: Record<UserRole, string> = {
@@ -28,6 +30,9 @@ function temporaryPassword(): string {
 export default function UsersPage() {
   const { isAdmin, isPending } = useMe();
   const { data: users, isLoading } = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: isAdmin });
+  const { data: agreement } = useQuery({ queryKey: ["agreement"], queryFn: api.getAgreement, enabled: isAdmin });
+  const farmers = users?.filter((u) => u.role === "farmer" && u.is_active) ?? [];
+  const agreed = agreement ? farmers.filter((u) => u.consent_version === agreement.version).length : 0;
 
   return (
     <AppShell>
@@ -44,13 +49,30 @@ export default function UsersPage() {
         ) : (
           <>
             <NewUser />
+            <section className="flex items-start gap-2 rounded-xl border border-border bg-surface p-4 text-sm">
+              <FileText size={16} className="mt-0.5 shrink-0 text-brand" />
+              {agreement ? (
+                <p>
+                  Data agreement: <span className="font-medium">{agreement.title}</span> — {agreed} of {farmers.length}{" "}
+                  {farmers.length === 1 ? "farmer has" : "farmers have"} agreed to this version.{" "}
+                  <Link href="/agreement?next=/users" className="text-brand hover:underline">
+                    Read it
+                  </Link>
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  No data agreement is set, so farmers are not asked to accept one. To ask them, put its text in a file on the
+                  server and set AGROTWIN_AGREEMENT_FILE to it.
+                </p>
+              )}
+            </section>
             <section className="rounded-xl border border-border bg-surface">
               {isLoading && (
                 <div className="p-5 text-sm text-muted-foreground">
                   <Loader2 className="inline animate-spin" size={14} /> Loading…
                 </div>
               )}
-              {users?.map((u) => <UserRow key={u.id} user={u} />)}
+              {users?.map((u) => <UserRow key={u.id} user={u} agreement={agreement ?? null} />)}
             </section>
           </>
         )}
@@ -145,7 +167,15 @@ function NewUser() {
   );
 }
 
-function UserRow({ user }: { user: User }) {
+function consentText(user: User, agreement: Agreement | null): string | null {
+  if (!agreement || user.role !== "farmer") return null;
+  if (user.consent_version === agreement.version && user.consent_at) {
+    return `Agreed to the data agreement ${serverDay(user.consent_at)}`;
+  }
+  return user.consent_version ? "Agreed to an earlier version — asked again at sign-in" : "Not agreed yet — asked at sign-in";
+}
+
+function UserRow({ user, agreement }: { user: User; agreement: Agreement | null }) {
   const qc = useQueryClient();
   const { me } = useMe();
   const [newPassword, setNewPassword] = useState<string | null>(null);
@@ -153,7 +183,12 @@ function UserRow({ user }: { user: User }) {
     mutationFn: (patch: Parameters<typeof api.updateUser>[1]) => api.updateUser(user.id, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
   });
+  const remove = useMutation({
+    mutationFn: (confirm: string) => api.deleteUser(user.id, confirm),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
   const self = me?.id === user.id;
+  const consent = consentText(user, agreement);
 
   return (
     <div className="flex flex-col gap-2 border-b border-border p-4 last:border-b-0 @2xl:flex-row @2xl:items-center">
@@ -162,12 +197,16 @@ function UserRow({ user }: { user: User }) {
           {user.name ?? user.email} {self && <span className="text-xs text-muted-foreground">(you)</span>}
         </div>
         <div className="truncate text-xs text-muted-foreground">{user.email}</div>
+        {consent && (
+          <div className={`text-xs ${user.consent_version === agreement?.version ? "text-healthy" : "text-attention"}`}>{consent}</div>
+        )}
         {newPassword && (
           <div className="mt-1 text-xs">
             New password: <span className="select-all font-mono">{newPassword}</span>
           </div>
         )}
         {update.isError && <div className="mt-1 text-xs text-problem">{(update.error as Error).message}</div>}
+        {remove.isError && <div className="mt-1 text-xs text-problem">{(remove.error as Error).message}</div>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -203,6 +242,23 @@ function UserRow({ user }: { user: User }) {
             onClick={() => update.mutate({ is_active: !user.is_active })}
           >
             {user.is_active ? "Switch off" : "Switch on"}
+          </Button>
+        )}
+        {!self && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-muted-foreground hover:text-problem"
+            disabled={remove.isPending}
+            title="Delete the account and all its fields, flights and maps"
+            onClick={() => {
+              const typed = window.prompt(
+                `Delete ${user.email} with all their fields, flights, maps and results? This cannot be undone.\n\nType their email to confirm:`
+              );
+              if (typed) remove.mutate(typed);
+            }}
+          >
+            {remove.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />} Delete
           </Button>
         )}
       </div>

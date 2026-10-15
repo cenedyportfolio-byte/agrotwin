@@ -11,6 +11,7 @@ import { ImageLightbox } from "@/components/surveys/ImageLightbox";
 import { ImportAssetPanel } from "@/components/surveys/ImportAssetPanel";
 import { ProcessingProgress } from "@/components/surveys/ProcessingProgress";
 import { GcpCard } from "@/components/surveys/GcpCard";
+import { FlightCheckCard } from "@/components/surveys/FlightCheckCard";
 import { NotAvailable } from "@/components/layout/NotAvailable";
 import { useProcessingJob } from "@/lib/hooks/useProcessingJob";
 import { useMe } from "@/lib/useMe";
@@ -52,6 +53,7 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
   const linkedFrame = searchParams.get("frame");
   const linkedView = searchParams.get("view");
   const gcpUploadError = searchParams.get("gcp_error");
+  const outlineUploadError = searchParams.get("outline_error");
   useEffect(() => {
     if (!linkedFrame || frames.length === 0) return;
     const i = frames.findIndex((f) => f.key === linkedFrame);
@@ -205,6 +207,19 @@ export default function SurveyDetailPage({ params }: { params: Promise<{ id: str
             }
           />
         )}
+
+        {outlineUploadError && (
+          <div className="rounded-xl border border-problem/40 bg-surface p-4 text-sm">
+            <span className="text-problem">The flight plan could not be used: {outlineUploadError}</span>{" "}
+            {boundary?.field_id && (
+              <Link href={`/fields/${boundary.field_id}`} className="text-brand hover:underline">
+                Add it on the field page.
+              </Link>
+            )}
+          </div>
+        )}
+
+        {survey && <FlightCheckCard surveyId={id} photos={survey.image_count} />}
 
         {survey && <GcpCard surveyId={id} busy={busy} initialError={gcpUploadError} />}
 

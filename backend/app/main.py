@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import analysis, auth, fields, health, surveys, users
+from app.routers import analysis, auth, fields, health, queue, surveys, users
 from app.services import job_runner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -26,6 +26,12 @@ app.include_router(users.router)
 app.include_router(fields.router)
 app.include_router(surveys.router)
 app.include_router(analysis.router)
+app.include_router(queue.router)
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    job_runner.stop()
 
 
 @app.on_event("startup")

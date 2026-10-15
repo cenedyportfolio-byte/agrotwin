@@ -1,6 +1,7 @@
 /** One place for every TanStack Query key so invalidation stays consistent. */
 export const queryKeys = {
   health: ["health"] as const,
+  agreement: ["agreement"] as const,
   fields: ["fields"] as const,
   field: (fieldId: string) => ["field", fieldId] as const,
   fieldSurveys: (fieldId: string) => ["field-surveys", fieldId] as const,
@@ -13,4 +14,5 @@ export const queryKeys = {
   analysis: (surveyId: string) => ["analysis", surveyId] as const,
   job: (surveyId: string) => ["job", surveyId] as const,
   gcpCheck: (surveyId: string) => ["gcp-check", surveyId] as const,
+  flightCheck: (surveyId: string, photos: number) => ["flight-check", surveyId, photos] as const,
 };

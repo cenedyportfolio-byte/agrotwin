@@ -34,12 +34,22 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # the data agreement they accepted (agreement_service: a hash of its text) and when
+    consent_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     farms: Mapped[list["Farm"]] = relationship(back_populates="owner")
 
     @property
     def is_staff(self) -> bool:
         return self.role in STAFF_ROLES
+
+    @property
+    def consent_required(self) -> bool:
+        """A farmer who has not accepted the current data agreement (when there is one)."""
+        from app.services import agreement_service
+
+        return agreement_service.needs_consent(self)
 
 
 class UserSession(Base):
@@ -82,6 +92,11 @@ class Field(Base):
     area_hectares: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # where the outline comes from: None, estimated around the camera positions
+    # of the latest flight; "flight_plan", the area drawn for the flight
+    # (boundary_file_service), which processing then leaves as it is
+    boundary_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    boundary_file: Mapped[str | None] = mapped_column(String, nullable=True)  # that file's name
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     farm: Mapped[Farm] = relationship(back_populates="fields")
@@ -244,6 +259,11 @@ class ProcessingJob(Base):
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)  # the exception, for staff
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+    # when it joined the queue, started and finished: the order in the queue,
+    # and how long maps take (queue_service's wait estimate)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     survey: Mapped[Survey] = relationship(back_populates="jobs")
 
