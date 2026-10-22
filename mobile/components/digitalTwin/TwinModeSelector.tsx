@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { Globe2, Map as MapIcon, Sparkles } from "lucide-react-native";
+import { /* Globe2, */ Map as MapIcon /* , Sparkles */ } from "lucide-react-native";
 import { immersive } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { AppText } from "@/components/ui";
@@ -12,10 +12,12 @@ export interface TwinModeSelectorProps {
   style?: StyleProp<ViewStyle>;
 }
 
+// 3D Twin and Photorealistic are hidden for now; uncomment to bring them back
+// (also the switch tool, link mode and photorealistic button in app/twin/[surveyId].tsx).
 export const TWIN_MODES: Array<{ key: TwinMode; label: string; icon: typeof MapIcon }> = [
   { key: "field-map", label: "Map", icon: MapIcon },
-  { key: "3d-twin", label: "3D", icon: Globe2 },
-  { key: "photorealistic", label: "Realistic", icon: Sparkles },
+  // { key: "3d-twin", label: "3D", icon: Globe2 },
+  // { key: "photorealistic", label: "Realistic", icon: Sparkles },
 ];
 
 /**

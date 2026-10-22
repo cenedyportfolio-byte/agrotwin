@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Crosshair, Info, Layers, Map as MapIcon } from "lucide-react-native";
+import { ArrowLeft, Crosshair, Info, Layers /* , Map as MapIcon */ } from "lucide-react-native";
 import { iconStroke, immersive, layout } from "@/constants/theme";
 import { useSurvey, useSurveyAvailability } from "@/features/surveys/hooks";
 import { useAnalysis } from "@/features/analysis/hooks";
 import { useProcessingJob } from "@/features/processing/hooks";
-import { useSplatAvailability } from "@/features/digitalTwin/hooks";
+// import { useSplatAvailability } from "@/features/digitalTwin/hooks";
 import { useUiStore } from "@/stores/uiStore";
 import { detectionTypeLabel, priorityLabel } from "@/constants/labels";
 import { Button, ErrorState, IconButton, LoadingState, Screen, AppText } from "@/components/ui";
@@ -26,7 +26,9 @@ export default function DigitalTwinScreen() {
   const setActiveSurvey = useUiStore((s) => s.setActiveSurvey);
   const twinRef = useRef<DigitalTwinHandle>(null);
 
-  const initialMode: TwinMode = modeParam === "3d-twin" || modeParam === "photorealistic" ? modeParam : "field-map";
+  // 3D Twin and Photorealistic are hidden for now (see TwinModeSelector), so a ?mode= link opens the field map.
+  // const initialMode: TwinMode = modeParam === "3d-twin" || modeParam === "photorealistic" ? modeParam : "field-map";
+  const initialMode: TwinMode = "field-map";
   const [mode, setMode] = useState<TwinMode>(initialMode);
   const [ready, setReady] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -38,7 +40,7 @@ export default function DigitalTwinScreen() {
   const survey = useSurvey(surveyId);
   const analysis = useAnalysis(surveyId);
   const availability = useSurveyAvailability(surveyId);
-  const splatAvail = useSplatAvailability(surveyId);
+  // const splatAvail = useSplatAvailability(surveyId);
   const { active: processing } = useProcessingJob(surveyId);
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export default function DigitalTwinScreen() {
   const hasMesh = !!availability.data?.model_3d || !!availability.data?.dsm || !!availability.data?.pointcloud;
   const tools: Array<{ label: string; icon: typeof Layers; onPress: () => void; selected?: boolean }> = [
     { label: "Layers", icon: Layers, onPress: () => surveyId && router.push({ pathname: "/map/[surveyId]", params: { surveyId } }) },
-    { label: `Switch to ${NEXT_MODE[mode] === "field-map" ? "field map" : NEXT_MODE[mode] === "3d-twin" ? "3D twin" : "photorealistic"}`, icon: MapIcon, onPress: () => changeMode(NEXT_MODE[mode]) },
+    // { label: `Switch to ${NEXT_MODE[mode] === "field-map" ? "field map" : NEXT_MODE[mode] === "3d-twin" ? "3D twin" : "photorealistic"}`, icon: MapIcon, onPress: () => changeMode(NEXT_MODE[mode]) },
     { label: "Focus field", icon: Crosshair, onPress: () => twinRef.current?.send({ type: "RESET_VIEW" }) },
     { label: advanced ? "Hide technical layers" : "Show technical layers", icon: Info, onPress: () => setAdvanced((v) => !v), selected: advanced },
   ];
@@ -146,7 +148,7 @@ export default function DigitalTwinScreen() {
           mode={mode}
           ready={ready}
           splat={splat}
-          splatAvailable={splatAvail.data === "available"}
+          splatAvailable={false /* photorealistic hidden for now: splatAvail.data === "available" */}
           hasMesh={hasMesh}
           processing={processing}
           layerError={layerError}

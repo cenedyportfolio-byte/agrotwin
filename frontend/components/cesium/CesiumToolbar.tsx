@@ -1,13 +1,15 @@
 "use client";
 
-import { Map, Globe2, Sparkles } from "lucide-react";
+import { Map /* , Globe2, Sparkles */ } from "lucide-react";
 import clsx from "clsx";
 import { useDigitalTwinStore, type ViewMode } from "@/lib/digitalTwinStore";
 
+// 3D Twin and Photorealistic are hidden for now; uncomment to bring them back
+// (also the deep link in app/fields/[id]/digital-twin/page.tsx).
 const MODES: { key: ViewMode; label: string; shortLabel: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { key: "field-map", label: "Field Map", shortLabel: "Map", icon: Map },
-  { key: "3d-twin", label: "3D Twin", shortLabel: "3D", icon: Globe2 },
-  { key: "photorealistic", label: "Photorealistic", shortLabel: "Realistic", icon: Sparkles },
+  // { key: "3d-twin", label: "3D Twin", shortLabel: "3D", icon: Globe2 },
+  // { key: "photorealistic", label: "Photorealistic", shortLabel: "Realistic", icon: Sparkles },
 ];
 
 export function CesiumToolbar() {

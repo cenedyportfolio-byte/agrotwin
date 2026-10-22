@@ -83,11 +83,11 @@ export default function DigitalTwinPage({ params }: { params: Promise<{ id: stri
   const [selectedGcpId, setSelectedGcpId] = useState<string | null>(null);
   const showGcps = useDigitalTwinStore((s) => s.showGcps);
 
-  // Deep link: ?mode=field-map|3d-twin|photorealistic
+  // Deep link: ?mode=field-map|3d-twin|photorealistic (3D Twin and Photorealistic hidden for now)
   const setMode = useDigitalTwinStore((s) => s.setMode);
   const requestedMode = searchParams.get("mode");
   useEffect(() => {
-    if (requestedMode === "field-map" || requestedMode === "3d-twin" || requestedMode === "photorealistic") {
+    if (requestedMode === "field-map" /* || requestedMode === "3d-twin" || requestedMode === "photorealistic" */) {
       setMode(requestedMode);
     }
   }, [requestedMode, setMode]);
