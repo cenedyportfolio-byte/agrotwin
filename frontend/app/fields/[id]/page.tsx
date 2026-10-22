@@ -15,6 +15,9 @@ import { NotAvailable } from "@/components/layout/NotAvailable";
 import { CROP_TYPES, describeZone, flightStatusLabel, formatArea, sortSpots } from "@/lib/farm";
 import { HealthBar } from "@/components/dashboard/HealthBar";
 import { OutlineCard } from "@/components/fields/OutlineCard";
+import { SatelliteCard } from "@/components/fields/SatelliteCard";
+import { SoilCard } from "@/components/fields/SoilCard";
+import { SprayWeatherCard } from "@/components/fields/SprayWeatherCard";
 import { SpotList } from "@/components/dashboard/SpotList";
 import type { FieldSummary } from "@/lib/types";
 
@@ -116,8 +119,10 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
                   </button>
                 )}
               </h1>
-              {field?.area_hectares != null && (
-                <p className="text-muted-foreground mt-1 text-xs sm:text-sm">{formatArea(field.area_hectares)}</p>
+              {(field?.area_hectares != null || field?.county) && (
+                <p className="text-muted-foreground mt-1 text-xs sm:text-sm">
+                  {[formatArea(field.area_hectares), field.county].filter(Boolean).join(" · ")}
+                </p>
               )}
               {field && <OwnerPicker field={field} />}
             </div>
@@ -149,6 +154,8 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
 
         {field && <OutlineCard field={field} />}
 
+        {field?.center_lat != null && <SprayWeatherCard fieldId={id} />}
+
         {field?.healthy_area_percent != null && (
           <div className="rounded-xl border border-border bg-surface p-4 sm:p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -175,6 +182,9 @@ export default function FieldDetailPage({ params }: { params: Promise<{ id: stri
             )}
           </div>
         )}
+
+        {field && <SoilCard field={field} detections={analysis?.detections} />}
+        {field && <SatelliteCard field={field} />}
 
         <div>
           <div className="flex items-center justify-between mb-3">

@@ -68,6 +68,8 @@ export interface FieldSummary extends FieldOut {
   problem_area_percent: number | null;
   analysis_method: AnalysisMethod | null;
   analysis_is_mock: boolean | null;
+  /** "Putnam County, TN" (US only; from the county boundaries kept on the server). */
+  county?: string | null;
 }
 
 /** A field outline set from (or taken back from) a flight-plan file (POST/DELETE /api/fields/{id}/boundary-file). */
@@ -250,7 +252,7 @@ export interface JobQueuePlace {
 
 /** One line of the flight check: what was measured from the photos and, when it should change, what to do next time. */
 export interface FlightCheckItem {
-  key: "height" | "detail" | "angle" | "front_overlap" | "side_overlap" | "coverage" | "sun" | "gps" | "bands" | "days";
+  key: "height" | "detail" | "angle" | "front_overlap" | "side_overlap" | "coverage" | "sun" | "weather" | "gps" | "bands" | "days";
   label: string;
   status: "ok" | "warn" | "info";
   value: string;
@@ -264,6 +266,98 @@ export interface FlightCheck {
   summary: string;
   frames: number;
   items: FlightCheckItem[];
+  /** The flight's weather is being looked up: ask again shortly. */
+  pending?: boolean;
+}
+
+/** One forecast hour for spraying (GET /api/fields/{id}/spray-weather). */
+export interface SprayHour {
+  /** Local time at the field, "2026-10-15T07:00". */
+  time: string;
+  status: "good" | "marginal" | "bad" | "night";
+  reason: string;
+  wind_mph: number | null;
+  gust_mph: number | null;
+  temp_f: number | null;
+  rain_in: number | null;
+  rain_chance: number | null;
+}
+
+export interface SprayWindow {
+  start: string;
+  end: string;
+  hours: number;
+}
+
+/** The next two days for spraying: a weather guide, the label decides. */
+export interface SprayWeather {
+  available: boolean;
+  reason?: string;
+  source?: string;
+  timezone?: string | null;
+  hours?: SprayHour[];
+  windows?: SprayWindow[];
+  next_window?: SprayWindow | null;
+  limits?: { wind_min_mph: number; wind_max_mph: number; gust_max_mph: number; max_temp_f: number; rain_free_hours: number };
+}
+
+/** A soil map unit inside the field (USDA soil survey). */
+export interface SoilUnit {
+  mukey: string;
+  symbol: string | null;
+  name: string;
+  acres: number;
+  share: number;
+  drainage: string | null;
+  hydrologic_group: string | null;
+  slope_pct: number | null;
+  flooding: string | null;
+  water_table_cm: number | null;
+  soil: string | null;
+  texture: string | null;
+  organic_matter_pct: number | null;
+  ph: number | null;
+  sand_pct: number | null;
+  silt_pct: number | null;
+  clay_pct: number | null;
+}
+
+/** A spot of the latest flight and the soil it mostly lies on. */
+export interface SoilSpot {
+  zone_id: string;
+  type: string;
+  severity: string;
+  acres: number;
+  mukey: string;
+  symbol: string | null;
+  soil: string | null;
+  drainage: string | null;
+  share: number;
+}
+
+/** GET /api/fields/{id}/soil. */
+export interface FieldSoil {
+  status: "ok" | "none" | "fetching" | "unavailable" | "no_outline" | "off";
+  source?: string;
+  units?: SoilUnit[];
+  geojson?: { type: "FeatureCollection"; features: { type: "Feature"; geometry: Geometry; properties: { mukey: string; symbol: string | null; drainage: string | null } }[] };
+  /** The largest spots of the latest flight, with their soil. */
+  spots?: SoilSpot[];
+  /** Every spot of the latest flight, counted per soil (mukey). */
+  spots_by_soil?: Record<string, { count: number; acres: number }>;
+}
+
+/** GET /api/fields/{id}/satellite: the field's average NDVI on each clear Sentinel-2 pass. */
+export interface SatelliteTimeline {
+  status: "ok" | "fetching" | "unavailable" | "no_outline" | "too_small" | "off";
+  season: { start: string; end: string };
+  points: { date: string; ndvi: number; p10: number | null; p90: number | null; clear: number | null }[];
+  passes: number;
+  cloudy: number;
+  flights: { survey_id: string; name: string; date: string }[];
+  progress: { done: number; todo: number } | null;
+  checked_at: string | null;
+  source: string;
 }
 
 /** What was read from a ground control points file (backend gcp_file_service). */

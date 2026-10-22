@@ -24,6 +24,12 @@ const nextConfig: NextConfig = {
     "bayazid.cenedypalma.com",
     ...extraOrigins,
   ],
+  // The field data under public/ (map tiles, 3D models, splats: hundreds of
+  // thousands of files) is served, never bundled: keep it out of the build's
+  // file tracing, which otherwise walks all of it on every build.
+  outputFileTracingExcludes: {
+    "/*": ["public/tiles/**/*", "public/models/**/*", "public/splats/**/*"],
+  },
   async rewrites() {
     return [
       {

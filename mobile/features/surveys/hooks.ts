@@ -89,5 +89,7 @@ export function useFlightCheck(surveyId: string | null | undefined, photos: numb
     queryKey: queryKeys.flightCheck(surveyId ?? "", photos),
     queryFn: () => surveysService.flightCheck(surveyId as string),
     enabled: !!surveyId && photos > 0,
+    // the flight's weather is being looked up: ask again until it is in
+    refetchInterval: (q) => (q.state.data?.pending ? 4000 : false),
   });
 }

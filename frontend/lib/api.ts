@@ -8,6 +8,7 @@ import type {
   DetectorStatus,
   FieldBoundaryResponse,
   FieldOut,
+  FieldSoil,
   FieldSummary,
   FlightCheck,
   GcpCheck,
@@ -15,6 +16,8 @@ import type {
   GroundControlPoint,
   ProcessingJob,
   QueueOverview,
+  SatelliteTimeline,
+  SprayWeather,
   Survey,
   SurveyAsset,
   SurveyAvailability,
@@ -147,6 +150,12 @@ export const api = {
     return request<BoundaryFileResult>(`/api/fields/${fieldId}/boundary-file`, { method: "POST", body: form });
   },
   /** Back to the outline estimated around the photos. */
+  /** The next two days for spraying at the field (a weather guide; the label decides). */
+  getSprayWeather: (fieldId: string) => request<SprayWeather>(`/api/fields/${fieldId}/spray-weather`),
+  /** The soil under the field (USDA soil survey), and the soil under each spot. */
+  getSoil: (fieldId: string) => request<FieldSoil>(`/api/fields/${fieldId}/soil`),
+  /** The field's crop greenness on each clear Sentinel-2 pass of the season. */
+  getSatellite: (fieldId: string) => request<SatelliteTimeline>(`/api/fields/${fieldId}/satellite`),
   removeBoundaryFile: (fieldId: string) =>
     request<BoundaryFileResult>(`/api/fields/${fieldId}/boundary-file`, { method: "DELETE" }),
 

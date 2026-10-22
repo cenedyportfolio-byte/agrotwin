@@ -121,6 +121,7 @@ class FieldSummary(FieldOut):
     problem_area_percent: float | None = None
     analysis_method: str | None = None
     analysis_is_mock: bool | None = None
+    county: str | None = None  # "Putnam County, TN" (county_service; US only)
 
 
 class BoundaryFileInfo(BaseModel):
@@ -139,7 +140,7 @@ class BoundaryFileResult(BaseModel):
 
 
 class FlightCheckItem(BaseModel):
-    key: str  # height | detail | angle | front_overlap | side_overlap | coverage | sun | gps | bands | days
+    key: str  # height | detail | angle | front_overlap | side_overlap | coverage | sun | weather | gps | bands | days
     label: str
     status: str  # ok | warn (advice for the next flight) | info
     value: str
@@ -153,6 +154,7 @@ class FlightCheckOut(BaseModel):
     summary: str
     frames: int
     items: list[FlightCheckItem]
+    pending: bool = False  # the flight's weather is being looked up: ask again shortly
 
 
 class SurveyCreate(BaseModel):

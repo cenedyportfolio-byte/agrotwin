@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import auth, models, schemas
 from app.database import get_db
-from app.services import boundary_file_service
+from app.services import boundary_file_service, county_service
 
 FLIGHT_PLAN = "flight_plan"
 
@@ -50,6 +50,7 @@ def _to_summary(field: models.Field) -> schemas.FieldSummary:
         problem_area_percent=problem,
         analysis_method=method,
         analysis_is_mock=is_mock,
+        county=county_service.county_of(field.center_lat, field.center_lon),
     )
 
 
@@ -259,3 +260,44 @@ def delete_field(field_id: str, db: Session = Depends(get_db)):
     db.delete(field)
     db.commit()
     return {"deleted": field_id}
+
+
+@router.get("/{field_id}/spray-weather")
+def get_spray_weather(field_id: str, db: Session = Depends(get_db)):
+    """The next two days for spraying at the field (weather_service.spray_forecast):
+    each hour good / marginal / bad / night, and the good windows. A guide; the label decides."""
+    from app.services import external_data, weather_service
+
+    field = db.get(models.Field, field_id)
+    if field is None or field.center_lat is None or field.center_lon is None:
+        return {"available": False, "reason": "The field has no position yet: it gets one with its first flight."}
+    if not external_data.enabled():
+        return {"available": False, "reason": "Outside data is switched off on this AgroTwin server."}
+    try:
+        return weather_service.spray_forecast(field.center_lat, field.center_lon)
+    except external_data.LookupFailed:
+        return {"available": False, "reason": "The weather service could not be reached. Try again later."}
+
+
+@router.get("/{field_id}/soil")
+def get_soil(field_id: str, db: Session = Depends(get_db)):
+    """The soil under the field (USDA soil survey; looked up once per outline,
+    in the background — "fetching" until then), with how many of the latest
+    flight's spots lie on each soil and the largest of them."""
+    from app.services import soil_service
+
+    field = db.get(models.Field, field_id)
+    data = soil_service.soil(field)
+    if data.get("status") == "ok":
+        spots = soil_service.spots_on_soil(field, data)
+        data = {**data, "spots": spots[:15], "spots_by_soil": soil_service.spots_by_soil(spots)}
+    return data
+
+
+@router.get("/{field_id}/satellite")
+def get_satellite(field_id: str, db: Session = Depends(get_db)):
+    """The field's average NDVI on every clear Sentinel-2 pass of the season,
+    with the drone flights' dates (looked up in the background)."""
+    from app.services import satellite_service
+
+    return satellite_service.timeline(db.get(models.Field, field_id))

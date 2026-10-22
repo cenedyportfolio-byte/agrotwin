@@ -1,4 +1,4 @@
-import type { BoundaryFileResult, FieldCreate, FieldOut, FieldSummary, Survey } from "@/types";
+import type { BoundaryFileResult, FieldCreate, FieldOut, FieldSoil, FieldSummary, SatelliteTimeline, SprayWeather, Survey } from "@/types";
 import { del, getJson, postJson, uploadMultipart } from "./apiClient";
 import type { LocalFile } from "./surveys";
 
@@ -17,6 +17,12 @@ export const fieldsService = {
     form.append("file", { uri: file.uri, name: file.name, type: file.type ?? "application/octet-stream" } as unknown as Blob);
     return uploadMultipart<BoundaryFileResult>(`/api/fields/${encodeURIComponent(fieldId)}/boundary-file`, form, { timeoutMs: 60_000 });
   },
+  /** The next two days for spraying at the field (a weather guide; the label decides). */
+  sprayWeather: (fieldId: string) => getJson<SprayWeather>(`/api/fields/${encodeURIComponent(fieldId)}/spray-weather`),
+  /** The soil under the field (USDA soil survey), and the soil under each spot. */
+  soil: (fieldId: string) => getJson<FieldSoil>(`/api/fields/${encodeURIComponent(fieldId)}/soil`),
+  /** The field's crop greenness on each clear Sentinel-2 pass of the season. */
+  satellite: (fieldId: string) => getJson<SatelliteTimeline>(`/api/fields/${encodeURIComponent(fieldId)}/satellite`),
   /** Back to the outline estimated around the photo positions. */
   removeFlightPlan: (fieldId: string) => del<BoundaryFileResult>(`/api/fields/${encodeURIComponent(fieldId)}/boundary-file`),
 };

@@ -89,6 +89,22 @@ Without Ollama the assistant still answers, built straight from the
 measurements. Without Docker/ODM (`AGROTWIN_ODM_ENABLED=false`) farmers get
 the quick map only.
 
+The US county boundaries (once; about 6 MB into the data folder):
+
+```bash
+sudo -u agrotwin bash -c 'set -a; . /etc/agrotwin/agrotwin.env; cd /opt/agrotwin/backend;
+  ../venv/bin/python -m scripts.fetch_counties'
+```
+
+Weather, soil and satellite lookups need outgoing https (port 443) to
+`api.open-meteo.com`, `historical-forecast-api.open-meteo.com`,
+`archive-api.open-meteo.com`, `sdmdataaccess.sc.egov.usda.gov`,
+`earth-search.aws.element84.com` and `sentinel-cogs.s3.us-west-2.amazonaws.com`
+(and `www2.census.gov` for the county step). Ask IT to allow them if the
+university firewall blocks outgoing traffic; without them those cards stay
+empty and everything else works (`AGROTWIN_EXTERNAL_DATA=false` turns the
+lookups off).
+
 ## 6. Services
 
 ```bash

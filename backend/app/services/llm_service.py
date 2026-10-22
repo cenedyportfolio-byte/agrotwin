@@ -55,19 +55,52 @@ def _latest_result(survey: models.Survey) -> models.AnalysisResult | None:
     return max(survey.analysis_results, key=lambda r: r.created_at, default=None)
 
 
+def _outside_context(survey: models.Survey, field: models.Field) -> dict:
+    """What the outside data already kept says (never looked up here): the
+    weather during the flight, the soils under the field, the satellite trend."""
+    from app.services import satellite_service
+
+    out: dict = {}
+    weather = json.loads(survey.weather_json) if survey.weather_json else None
+    if weather and weather.get("status") == "ok":
+        out["flight_weather"] = {k: weather.get(k) for k in ("wind_mph", "gust_mph", "cloud_pct", "temp_f", "rain_in", "rain_before_in")}
+        out["flight_weather"]["source"] = "Open-Meteo weather model estimate for the area"
+    soil = json.loads(field.soil_json) if field.soil_json else None
+    if soil and soil.get("status") == "ok":
+        out["soils"] = [{"name": u["name"], "share_percent": u["share"], "drainage": u.get("drainage"), "texture": u.get("texture"),
+                         "organic_matter_percent": u.get("organic_matter_pct"), "ph": u.get("ph")} for u in soil["units"][:4]]
+        out["soils_note"] = "USDA soil survey (SSURGO), mapped to about an acre: context for where things are, never a diagnosis."
+    if field.satellite_json:
+        timeline = satellite_service.timeline(field, start_lookup=False)
+        points = timeline["points"]
+        if points:
+            peak = max(points, key=lambda p: p["ndvi"])
+            out["satellite_ndvi"] = {
+                "last_clear_pass": {"date": points[-1]["date"], "ndvi": points[-1]["ndvi"]},
+                "season_peak": {"date": peak["date"], "ndvi": peak["ndvi"]},
+                "clear_passes": len(points),
+                "note": "Sentinel-2 field average over 10 m pixels: the whole crop's trend, not weeds.",
+            }
+    return out
+
+
 def build_field_context(
     survey: models.Survey, field: models.Field, result: models.AnalysisResult | None
 ) -> dict:
     """Structured context an LLM (or this template responder) explains — mirrors §18's example shape.
     Includes the field's previous analysed survey (if any) so comparison questions are answerable."""
+    from app.services.county_service import county_of
+
     context: dict = {
         "field_name": field.name,
         "crop_type": field.crop_type,
         "area_hectares": field.area_hectares,
+        "county": county_of(field.center_lat, field.center_lon),
         "survey_name": survey.name,
         "survey_date": survey.survey_date.isoformat() if survey.survey_date else None,
         "image_count": survey.image_count,
     }
+    context.update(_outside_context(survey, field))
 
     if result is None:
         context["analysis_available"] = False

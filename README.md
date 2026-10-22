@@ -119,6 +119,36 @@ much of the field they cover. What falls short of the flight guide is
 flagged as advice for the next flight; processing goes ahead either way. The
 limits are `AGROTWIN_FLIGHT_*` (`app/config.py`).
 
+## Weather, soil and satellite (outside data)
+
+AgroTwin looks up a few free public sources for each field and flight, in the
+background, once — an upload or a page never waits on them, and without the
+internet they are simply missing (`external_data`):
+
+- **Weather** (Open-Meteo, `weather_service`): the wind, gusts, cloud, rain
+  and temperature during each flight become a line of the flight check; the
+  field page shows the **spray weather** for the next two days, hour by hour
+  (wind 3–10 mph, gusts under 15, no rain for 4 hours, under 85 °F, daylight —
+  `AGROTWIN_SPRAY_*`), as a guide: the product label decides. Positions sent
+  for weather are rounded to about 5 km. Open-Meteo's free API is for
+  non-commercial use (research is fine; CC BY 4.0); set
+  `AGROTWIN_OPEN_METEO_API_KEY` for their paid one.
+- **County** (`county_service`): each field's US county from the Census
+  Bureau's boundaries kept on the server — run `python -m
+  scripts.fetch_counties` once; no outside service is asked after that.
+- **Soil** (USDA soil survey, SSURGO via Soil Data Access, `soil_service`):
+  the soils under the field with their share, drainage, texture, organic
+  matter and pH, drawn as a map with the latest flight's spots on top, and how
+  many spots lie on each soil — where they lie, never why. US fields only.
+- **Satellite** (Copernicus Sentinel-2 through Element 84's Earth Search,
+  `satellite_service`): the field's average NDVI on every clear pass of the
+  season (every few days), with the drone flights marked — the crop's trend
+  between flights. 10 m pixels: not weeds or single plants. No account needed.
+
+Soil and satellite are sent only a box a little larger than the field; no
+names or outlines leave the server. `AGROTWIN_EXTERNAL_DATA=false` switches
+all of it off.
+
 ## Accounts and sign-in
 
 Everyone signs in. Three roles:

@@ -18,6 +18,9 @@ import { sharesFromPercents } from "@/utils/health";
 import { Blueprint, Button, ErrorState, KeyValueRow, ListGroup, ListRow, LoadingState, Screen, ScreenHeader, SectionHeader, AppText } from "@/components/ui";
 import { FieldHealthSummary } from "@/components/fields/FieldHealthSummary";
 import { OutlineCard } from "@/components/fields/OutlineCard";
+import { SatelliteCard } from "@/components/fields/SatelliteCard";
+import { SoilCard } from "@/components/fields/SoilCard";
+import { SprayWeatherCard } from "@/components/fields/SprayWeatherCard";
 import { ProcessingProgress } from "@/components/processing/ProcessingProgress";
 import { AskAiFab } from "@/components/ai/AskAiFab";
 import { authHeaders } from "@/services/apiClient";
@@ -66,7 +69,7 @@ export default function FieldDetailScreen() {
 
   const f = field.data;
   const shares = sharesFromPercents(f.healthy_area_percent, f.attention_area_percent, f.problem_area_percent);
-  const meta = `${cropLabel(f.crop_type)} · ${f.area_hectares != null ? formatFieldArea(f.area_hectares) : "size not measured"}`;
+  const meta = [cropLabel(f.crop_type), f.area_hectares != null ? formatFieldArea(f.area_hectares) : "size not measured", f.county].filter(Boolean).join(" · ");
   const go = (pathname: "/map/[surveyId]" | "/analysis/[surveyId]" | "/twin/[surveyId]" | "/gallery/[surveyId]") => latest && router.push({ pathname, params: { surveyId: latest.id } });
   const procLabel = latest ? (analysis.data ? "Crop health checked" : processing ? "Making the map" : latest.status === "FAILED" ? "Failed" : "No results yet") : "—";
   const procColor = analysis.data ? colors.healthy : processing ? colors.accent : latest?.status === "FAILED" ? colors.problem : colors.muted;
@@ -122,6 +125,13 @@ export default function FieldDetailScreen() {
 
         <View style={{ marginBottom: 18 }}>
           <OutlineCard field={f} />
+        </View>
+
+        {/* outside data: each card hides itself when it has nothing for this field */}
+        <View style={{ gap: 18, marginBottom: 18 }}>
+          <SprayWeatherCard field={f} />
+          <SatelliteCard field={f} />
+          <SoilCard field={f} detections={analysis.data?.detections} />
         </View>
 
         <SectionHeader title="More for this field" />

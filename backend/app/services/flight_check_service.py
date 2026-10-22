@@ -196,9 +196,10 @@ def _footprint(x: float, y: float, yaw: float, width_m: float, height_m: float) 
 # ── the check ────────────────────────────────────────────────────────────────
 
 
-def check(rows: list, field=None) -> dict:
+def check(rows: list, field=None, weather: dict | None = None) -> dict:
     """rows: the flight's photos (SurveyImage rows or objects with the same
-    attributes). field: its Field, for the flight-plan outline."""
+    attributes). field: its Field, for the flight-plan outline. weather: the
+    weather during the flight (weather_service), when it is known."""
     s = settings
     items: list[Item] = []
     rgb = [r for r in rows if r.band == "RGB"]
@@ -325,6 +326,27 @@ def check(rows: list, field=None) -> dict:
                 "The sun was low: long shadows can make the crop look patchy and change the crop-health numbers. "
                 "Fly within about 2 hours of midday." if low else None,
             ))
+
+    # the weather during the flight (a weather model's estimate for the area)
+    if weather and weather.get("wind_mph") is not None:
+        wind, gust = weather["wind_mph"], weather.get("gust_mph")
+        rain = weather.get("rain_in") or 0.0
+        parts = [f"{wind:.0f} mph wind" + (f", gusts {gust:.0f}" if gust is not None else "")]
+        if weather.get("cloud_pct") is not None:
+            parts.append(f"{weather['cloud_pct']}% cloud")
+        parts.append("rain" if rain >= 0.01 else "dry")
+        windy, wet = wind > s.flight_max_wind_mph, rain >= 0.01
+        if windy:
+            message = (f"Wind over {s.flight_max_wind_mph:.0f} mph shakes the crop and the drone: the photos can blur "
+                       "and the map can have gaps. Fly on a calmer day.")
+        elif wet:
+            message = "It rained during the flight: wet leaves shine and drops on the lens blur the photos."
+        elif (weather.get("rain_before_in") or 0) >= 0.05:
+            message = "It rained in the 12 hours before: wet leaves can look different from dry ones."
+        else:
+            message = "Estimated by a weather model for the area, not measured at the field."
+        items.append(Item("weather", "Weather", "warn" if windy or wet else "ok", " · ".join(parts),
+                          f"Wind below {s.flight_max_wind_mph:.0f} mph, no rain", message))
 
     # position
     unlocated = len(frames) - len(located)

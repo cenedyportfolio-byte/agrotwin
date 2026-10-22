@@ -106,6 +106,7 @@ def _run(job_id: str, pipeline: Pipeline, queue: str = "quick") -> None:
         db.commit()
         if processing_service.is_full_pipeline(job):
             _queue_detailed_map(db, job.survey)
+            _look_up_outside_data(db, job.survey)
     except Exception as exc:
         log.exception("processing job %s failed", job_id)
         db.rollback()
@@ -135,6 +136,21 @@ def _queue_detailed_map(db: Session, survey: models.Survey) -> None:
         log.info("survey %s: detailed map queued", survey.id)
     except JobAlreadyRunning:
         pass
+
+
+def _look_up_outside_data(db: Session, survey: models.Survey) -> None:
+    """The flight's weather and the field's soil and satellite record, looked up
+    in the background so they are ready when the pages open."""
+    from app.services import satellite_service, soil_service, weather_service
+
+    try:
+        db.refresh(survey)
+        weather_service.flight_weather(survey)
+        if survey.field is not None:
+            soil_service.soil(survey.field)
+            satellite_service.timeline(survey.field)
+    except Exception:
+        log.exception("survey %s: outside data not started", survey.id)
 
 
 def recover_interrupted_jobs() -> int:

@@ -15,6 +15,7 @@ from pathlib import Path
 _TMP = Path(tempfile.mkdtemp(prefix="agrotwin-odm-test-"))
 os.environ["AGROTWIN_DATA_DIR"] = str(_TMP / "data")
 os.environ["AGROTWIN_DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
+os.environ["AGROTWIN_EXTERNAL_DATA"] = "false"  # no weather / soil / satellite lookups from tests
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import models  # noqa: E402

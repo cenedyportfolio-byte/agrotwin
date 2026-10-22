@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fieldsService } from "@/services/fields";
 import type { LocalFile } from "@/services/surveys";
-import type { BoundaryFileResult, FieldCreate } from "@/types";
+import type { BoundaryFileResult, FieldCreate, FieldSummary } from "@/types";
 import { queryKeys } from "../queryKeys";
 
 export function useFields() {
@@ -45,4 +45,34 @@ export function useFlightPlan(fieldId: string) {
   const attach = useMutation({ mutationFn: (file: LocalFile) => fieldsService.attachFlightPlan(fieldId, file), onSuccess: updated });
   const remove = useMutation({ mutationFn: () => fieldsService.removeFlightPlan(fieldId), onSuccess: updated });
   return { attach, remove };
+}
+
+/** The next two days for spraying at the field; kept for a quarter of an hour. */
+export function useSprayWeather(field: FieldSummary | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.sprayWeather(field?.id ?? ""),
+    queryFn: () => fieldsService.sprayWeather(field!.id),
+    enabled: !!field && field.center_lat != null,
+    staleTime: 15 * 60_000,
+  });
+}
+
+/** The soil under the field; asked again every few seconds while the server looks it up. */
+export function useSoil(field: FieldSummary | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.soil(field?.id ?? "", field?.boundary_geojson ?? null),
+    queryFn: () => fieldsService.soil(field!.id),
+    enabled: !!field?.boundary_geojson,
+    refetchInterval: (q) => (q.state.data?.status === "fetching" ? 4000 : false),
+  });
+}
+
+/** The season's satellite passes; asked again while the server reads new ones. */
+export function useSatellite(field: FieldSummary | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.satellite(field?.id ?? "", field?.boundary_geojson ?? null),
+    queryFn: () => fieldsService.satellite(field!.id),
+    enabled: !!field?.boundary_geojson,
+    refetchInterval: (q) => (q.state.data?.status === "fetching" ? 10_000 : false),
+  });
 }

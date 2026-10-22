@@ -351,8 +351,11 @@ def get_gcp_check(survey_id: str, db: Session = Depends(get_db)):
 def get_flight_check(survey_id: str, db: Session = Depends(get_db)):
     """How the flight was flown (height, overlap, camera angle, sun, …) and what
     to change next time. Advice only: it never holds up processing."""
+    from app.services import weather_service
+
     survey = _get_survey(db, survey_id)
-    return flight_check_service.check(list(survey.images), survey.field)
+    weather, pending = weather_service.flight_weather(survey)
+    return {**flight_check_service.check(list(survey.images), survey.field, weather), "pending": pending}
 
 
 @router.get("/{survey_id}/job", response_model=schemas.ProcessingJobOut | None)

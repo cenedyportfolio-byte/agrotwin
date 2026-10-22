@@ -112,6 +112,30 @@ class Settings(BaseSettings):
     flight_max_tilt_deg: float = 10.0  # from straight down
     flight_min_sun_deg: float = 30.0  # a lower sun casts long shadows
     flight_min_coverage: float = 97.0  # % of a flight-plan outline in the photos
+    flight_max_wind_mph: float = 15.0  # the flight guide: wind below about 15 mph
+
+    # Outside data (app/services/external_data.py): the weather (Open-Meteo),
+    # the soil (USDA Soil Data Access) and the satellite passes (Sentinel-2 via
+    # Earth Search). Looked up in the background and kept with the field or
+    # flight. Switch off for a server without internet, or to keep every
+    # field's position on this server.
+    external_data: bool = True
+    weather_round_deg: float = 0.05  # positions sent for weather are rounded (0.05° ≈ 5 km)
+    # Open-Meteo's free API is for non-commercial use (research is fine); with a
+    # key the paid one (customer-*.open-meteo.com) is used
+    open_meteo_api_key: str | None = None
+    soil_data_url: str = "https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest"
+    stac_url: str = "https://earth-search.aws.element84.com/v1"
+    satellite_max_cloud: float = 60.0  # % of a whole scene; the field itself is then checked pixel by pixel
+    # US county boundaries (Census Bureau), downloaded once by scripts/fetch_counties.py
+    counties_file: Path = DATA_DIR / "reference" / "us_counties.json.gz"
+
+    # Spray weather (weather_service.spray_forecast): a guide, the label decides
+    spray_wind_min_mph: float = 3.0  # calmer: drift risk from a temperature inversion
+    spray_wind_max_mph: float = 10.0
+    spray_gust_max_mph: float = 15.0
+    spray_max_temp_f: float = 85.0  # hotter: some herbicides turn to vapour
+    spray_rain_free_hours: int = 4  # no rain expected for this long after spraying
 
     # The data agreement farmers accept before they use AgroTwin
     # (app/services/agreement_service.py): a text or Markdown file. Editing the

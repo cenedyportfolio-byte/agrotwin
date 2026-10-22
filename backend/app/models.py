@@ -97,6 +97,10 @@ class Field(Base):
     # (boundary_file_service), which processing then leaves as it is
     boundary_source: Mapped[str | None] = mapped_column(String, nullable=True)
     boundary_file: Mapped[str | None] = mapped_column(String, nullable=True)  # that file's name
+    # outside data kept with the field (soil_service, satellite_service): JSON,
+    # tied to the outline it was looked up for
+    soil_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    satellite_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     farm: Mapped[Farm] = relationship(back_populates="fields")
@@ -112,6 +116,7 @@ class Survey(Base):
     survey_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     drone_model: Mapped[str | None] = mapped_column(String, nullable=True)
     image_count: Mapped[int] = mapped_column(Integer, default=0)
+    weather_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # the weather during the flight (weather_service)
     status: Mapped[str] = mapped_column(String, default="PENDING")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

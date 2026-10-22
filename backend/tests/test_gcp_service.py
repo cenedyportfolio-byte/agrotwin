@@ -3,18 +3,24 @@ takes the targets in: a rotated 60 cm checkerboard on a straw-and-soil
 texture is found at the right place, bright straw stripes are not, a 17 cm
 marker is found at the orthophoto's own resolution while a dimmer straw
 look-alike is not, targets are named (GCPs by compass, markers M1… north to
-south) and sorted, and the field outline keeps a target outside the camera
-hull GCP_MARGIN_M inside.
+south) and sorted, the field outline keeps a target outside the camera
+hull GCP_MARGIN_M inside, and a flight with only the quick map has its
+targets found there.
 
 Run (from backend/):  python -m tests.test_gcp_service
 """
 
 import math
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 
+_TMP = Path(tempfile.mkdtemp(prefix="agrotwin-gcp-test-"))
+os.environ["AGROTWIN_DATA_DIR"] = str(_TMP / "data")
+os.environ["AGROTWIN_DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services import gcp_service  # noqa: E402
@@ -155,6 +161,43 @@ def test_boundary_takes_in_the_targets():
     assert area > plain_area and abs(clat - lat0) < 1e-6  # the centre stays the cameras'
 
 
+def test_found_in_quick_map_without_detailed_map():
+    """Detailed maps off (or not made yet): the targets are looked for in the quick map."""
+    import rasterio
+    from rasterio.transform import from_origin
+
+    from app import models
+    from app.database import SessionLocal, init_db
+
+    init_db()
+    rng = np.random.default_rng(11)
+    img = _field(rng)  # 12 m x 12 m at 2.5 cm
+    _put_target(img, 240.4, 231.7, 20.0)
+    path = _TMP / "orthomosaic_quick.tif"
+    with rasterio.open(path, "w", driver="GTiff", width=img.shape[2], height=img.shape[1], count=3, dtype="uint8",
+                       crs="EPSG:32616", transform=from_origin(594000.0, 3995000.0, RES, RES)) as dst:
+        dst.write(np.clip(img, 0, 255).astype(np.uint8))
+    db = SessionLocal()
+    try:
+        farm = models.Farm(name="f")
+        db.add(farm)
+        db.flush()
+        field = models.Field(farm_id=farm.id, name="Quick only")
+        db.add(field)
+        db.flush()
+        survey = models.Survey(field_id=field.id, name="38 photos")
+        db.add(survey)
+        db.flush()
+        db.add(models.SurveyAsset(survey_id=survey.id, asset_type="orthomosaic", file_path=str(path), format="tif",
+                                  source="direct_georeferencing"))
+        db.commit()
+        db.refresh(survey)
+        found = gcp_service.detect_and_store(db, survey)
+        assert len(found) == 1 and found[0].source == "detected" and abs(found[0].size_m - 0.6) < 0.05, found
+    finally:
+        db.close()
+
+
 def main():
     test_compass_names()
     test_names()
@@ -164,6 +207,7 @@ def main():
     test_target_on_bright_soil_found()
     test_refine_is_subpixel()
     test_marker_found_straw_lookalike_ignored()
+    test_found_in_quick_map_without_detailed_map()
     print("gcp_service: all checks passed")
 
 

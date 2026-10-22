@@ -46,6 +46,7 @@ from app.services.camera_model import sample_image
 log = logging.getLogger(__name__)
 
 PHOTOGRAMMETRIC_SOURCES = ("photogrammetry_odm", "manual_import")
+QUICK_SOURCE = "direct_georeferencing"  # the quick map: searched when there is no photogrammetric one
 DETECT_GSD_M = 0.025
 RING_FRACTIONS = (0.2, 0.35, 0.5, 0.65, 0.8)  # of the half side: inside the target's inscribed circle
 N_ANGLES = 32
@@ -320,16 +321,27 @@ def sort_key(g: models.GroundControlPoint) -> tuple:
 
 
 def detect_and_store(db: Session, survey: models.Survey) -> list[models.GroundControlPoint]:
-    """Finds the survey's targets in its photogrammetric orthophoto and stores
-    them (replacing earlier detections). [] when there is no such orthophoto."""
+    """Finds the survey's targets in its photogrammetric orthophoto — or, for a
+    flight that only has the quick map (detailed maps off on this server, or
+    not made yet), in the quick map — and stores them (replacing earlier
+    detections). [] when there is no orthophoto at all.
+
+    The quick map is 1 cm per pixel and taken frame by frame, so the targets
+    are as sharp as in the photos; their positions are as good as the quick
+    map's placement (see mosaic_service), and the detailed map, once made,
+    finds them again on its own orthophoto."""
     from rasterio.warp import transform as warp
 
-    orthos = [a for a in survey.assets if a.asset_type == "orthomosaic" and a.source in PHOTOGRAMMETRIC_SOURCES
-              and (a.format or "").lower() in ("tif", "tiff") and a.path.exists()]
+    def tifs(sources):
+        return [a for a in survey.assets if a.asset_type == "orthomosaic" and a.source in sources
+                and (a.format or "").lower() in ("tif", "tiff") and a.path.exists()]
+
+    orthos = tifs(PHOTOGRAMMETRIC_SOURCES) or tifs((QUICK_SOURCE,))
     if not orthos:
-        log.info("gcp: survey %s has no photogrammetric orthophoto, skipped", survey.id)
+        log.info("gcp: survey %s has no orthophoto, skipped", survey.id)
         return []
-    ortho = min(orthos, key=lambda a: PHOTOGRAMMETRIC_SOURCES.index(a.source))
+    order = (*PHOTOGRAMMETRIC_SOURCES, QUICK_SOURCE)
+    ortho = min(orthos, key=lambda a: order.index(a.source))
     found = detect_in_orthophoto(ortho.path)
     for old in [g for g in survey.gcps if g.source == "detected"]:
         db.delete(old)

@@ -22,6 +22,8 @@ export function FlightCheckCard({ surveyId, photos }: { surveyId: string; photos
     queryKey: ["flight-check", surveyId, photos],
     queryFn: () => api.getFlightCheck(surveyId),
     enabled: photos > 0,
+    // the flight's weather is being looked up: ask again until it is in
+    refetchInterval: (q) => (q.state.data?.pending ? 4000 : false),
   });
   const [open, setOpen] = useState<boolean | null>(null);
   if (!data || data.status === "unknown") return null;

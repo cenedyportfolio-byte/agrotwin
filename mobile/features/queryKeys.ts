@@ -15,4 +15,7 @@ export const queryKeys = {
   job: (surveyId: string) => ["job", surveyId] as const,
   gcpCheck: (surveyId: string) => ["gcp-check", surveyId] as const,
   flightCheck: (surveyId: string, photos: number) => ["flight-check", surveyId, photos] as const,
+  sprayWeather: (fieldId: string) => ["spray-weather", fieldId] as const,
+  soil: (fieldId: string, outline: string | null) => ["soil", fieldId, outline] as const,
+  satellite: (fieldId: string, outline: string | null) => ["satellite", fieldId, outline] as const,
 };
